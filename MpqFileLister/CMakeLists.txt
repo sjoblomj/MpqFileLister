@@ -66,10 +66,16 @@ if(MSVC)
     )
 endif()
 
-# For MinGW, we need to handle SEH differently
+# For MinGW, we need to handle SEH differently and link statically
 if(MINGW)
     target_compile_options(MpqFileLister PRIVATE
         -Wall
         -Wextra
+    )
+    # Link statically to avoid runtime dependencies on libstdc++ and libgcc
+    target_link_options(MpqFileLister PRIVATE
+        -static-libgcc
+        -static-libstdc++
+        -static
     )
 endif()

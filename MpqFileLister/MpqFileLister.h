@@ -9,13 +9,16 @@
 #define MPQFILELISTER_H
 
 #include <windows.h>
+#include <cstdint>
 #include <fstream>
 #include <mutex>
 #include <string>
 
 // Unique plugin ID - randomly generated
-constexpr DWORD PLUGIN_ID = 0x4d51464c;  // "MQFL" in hex
-constexpr const char* PLUGIN_NAME = "MPQFileLister v1.0";
+constexpr uint32_t PLUGIN_ID = 0x4d51464c;  // "MQFL" in hex
+
+// Plugin name - defined as macro to allow string literal concatenation
+#define PLUGIN_NAME "MPQFileLister v1.0"
 
 // Forward declaration of the interface
 struct IMPQDraftPlugin;

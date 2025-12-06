@@ -5,19 +5,14 @@
 #include "MpqFileLister.h"
 #include "MPQDraftPlugin.h"
 #include "QHookAPI.h"
+#include "Config.h"
+#include "ConfigDialog.h"
 #include <filesystem>
 #include <cstring>
 #include <unordered_set>
 
-// === Configuration ===
-// If true, only log each unique filename once; if false, log every access
-static constexpr bool logUniqueOnly = true;
-
-// Log file name (will be placed in the game's directory)
-static const std::string LOG_FILE_NAME = "MPQDraft_FileLog.txt";
-
 // SFileOpenFileEx ordinal in Storm.dll
-static constexpr DWORD SFILEOPENFILEEX_ORDINAL = 0x10C;
+static constexpr uint32_t SFILEOPENFILEEX_ORDINAL = 0x10C;
 
 // Global plugin instance
 CMpqFileListerPlugin g_MpqFileLister;
@@ -28,7 +23,7 @@ std::ofstream CMpqFileListerPlugin::s_logFile;
 std::mutex CMpqFileListerPlugin::s_logMutex;
 std::string CMpqFileListerPlugin::s_logFilePath;
 
-// Set to track seen filenames (used when logUniqueOnly is true)
+// Set to track seen filenames (used when g_logUniqueOnly is true)
 static std::unordered_set<std::string> s_seenFiles;
 
 // DLL entry point
@@ -41,6 +36,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved)
         case DLL_PROCESS_ATTACH:
             g_MpqFileLister.SetThisModule(hModule);
             DisableThreadLibraryCalls(hModule);
+            InitConfigPath(hModule);
+            LoadConfig();
             break;
         case DLL_PROCESS_DETACH:
             // Ensure cleanup happens
@@ -127,18 +124,13 @@ BOOL WINAPI CMpqFileListerPlugin::CanPatchExecutable(const char* lpszEXEFileName
 
 BOOL WINAPI CMpqFileListerPlugin::Configure(HWND hParentWnd)
 {
-    (void)hParentWnd;
-    // No configuration needed
-    std::string message = "MPQFileLister logs all file access attempts to:\n"
-        "<game_folder>\\" + LOG_FILE_NAME + "\n\n"
-        "No configuration is required.";
-    MessageBoxA(hParentWnd, message.c_str(), PLUGIN_NAME, MB_OK | MB_ICONINFORMATION);
+    ShowConfigDialog(hParentWnd, m_hThisModule);
     return TRUE;
 }
 
 BOOL WINAPI CMpqFileListerPlugin::ReadyForPatch()
 {
-    // Always ready - no configuration needed
+    // Always ready - configuration is available but never required, since we use defaults
     return TRUE;
 }
 
@@ -165,17 +157,15 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSFileOpenFileEx(
     {
         std::lock_guard<std::mutex> lock(s_logMutex);
 
-        if constexpr (logUniqueOnly)
+        bool shouldLog = true;
+        if (g_logUniqueOnly)
         {
             // Only log if we haven't seen this filename before
             auto [it, inserted] = s_seenFiles.insert(szFileName);
-            if (inserted)
-            {
-                s_logFile << szFileName << "\n";
-                s_logFile.flush();
-            }
+            shouldLog = inserted;
         }
-        else
+
+        if (shouldLog)
         {
             s_logFile << szFileName << "\n";
             s_logFile.flush();
@@ -196,20 +186,32 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
     if (m_bInitialized)
         return TRUE;
 
-    // Build log file path in the game's directory using std::filesystem
-    char exePath[MAX_PATH];
-    if (GetModuleFileNameA(nullptr, exePath, MAX_PATH) > 0)
+    // Build log file path
+    // If g_logFileName is an absolute path, use it directly
+    // Otherwise, place it in the game's directory
+    std::filesystem::path logPath(g_logFileName);
+    if (logPath.is_absolute())
     {
-        std::filesystem::path gamePath(exePath);
-        s_logFilePath = (gamePath.parent_path() / LOG_FILE_NAME).string();
+        s_logFilePath = g_logFileName;
     }
     else
     {
-        // Fallback to just the filename in current directory
-        s_logFilePath = LOG_FILE_NAME;
+        std::string exePath(MAX_PATH, '\0');
+        DWORD len = GetModuleFileNameA(nullptr, exePath.data(), MAX_PATH);
+        if (len > 0)
+        {
+            exePath.resize(len);
+            std::filesystem::path gamePath(exePath);
+            s_logFilePath = (gamePath.parent_path() / g_logFileName).string();
+        }
+        else
+        {
+            // Fallback to just the filename in the current directory
+            s_logFilePath = g_logFileName;
+        }
     }
 
-    // Open log file using std::ofstream
+    // Open the log file
     s_logFile.open(s_logFilePath, std::ios::out | std::ios::trunc);
 
     // Find Storm.dll
@@ -221,7 +223,7 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
 
     if (!m_hStorm)
     {
-        // Storm not loaded - can't hook
+        // Storm is not loaded - can't hook
         if (s_logFile.is_open())
         {
             s_logFile << "ERROR: Storm.dll not found\n";
@@ -242,7 +244,7 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
         return TRUE;  // Return TRUE to not abort the patch
     }
 
-    // Write header to log file
+    // Write header to the log file
     if (s_logFile.is_open())
     {
         s_logFile << "=== MPQ File Access Log ===\n";
@@ -267,7 +269,7 @@ BOOL WINAPI CMpqFileListerPlugin::TerminatePlugin()
     if (!m_bInitialized)
         return TRUE;
 
-    // Close log file
+    // Close the log file
     if (s_logFile.is_open())
     {
         s_logFile << "=== End of Log ===\n";

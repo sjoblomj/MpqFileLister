@@ -15,11 +15,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Source files
 set(SOURCES
     MpqFileLister.cpp
+    Config.cpp
+    ConfigDialog.cpp
     QHookAPI.cpp
 )
 
 set(HEADERS
     MpqFileLister.h
+    Config.h
+    ConfigDialog.h
     MPQDraftPlugin.h
     QHookAPI.h
 )
@@ -41,6 +45,8 @@ set_target_properties(MpqFileLister PROPERTIES
 target_link_libraries(MpqFileLister PRIVATE
     kernel32
     user32
+    comdlg32
+    shell32
 )
 
 # Compiler definitions

@@ -232,8 +232,9 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
     }
 
     // Get the original function pointer using ordinal
-    s_OriginalSFileOpenFileEx = (SFileOpenFileExPtr)GetProcAddress(
-        m_hStorm, (LPCSTR)SFILEOPENFILEEX_ORDINAL);
+    // Use reinterpret_cast via void* to avoid -Wcast-function-type warning
+    s_OriginalSFileOpenFileEx = reinterpret_cast<SFileOpenFileExPtr>(
+        reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)SFILEOPENFILEEX_ORDINAL)));
 
     if (!s_OriginalSFileOpenFileEx)
     {
@@ -251,12 +252,13 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
     }
 
     // Patch the import table to redirect calls to our hook
+    // Use reinterpret_cast via void* to avoid -Wcast-function-type warning
     HMODULE hHostProcess = GetModuleHandle(nullptr);
     PatchImportEntry(
         hHostProcess,
         "Storm.dll",
-        (FARPROC)s_OriginalSFileOpenFileEx,
-        (FARPROC)HookedSFileOpenFileEx,
+        reinterpret_cast<FARPROC>(reinterpret_cast<void*>(s_OriginalSFileOpenFileEx)),
+        reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSFileOpenFileEx)),
         TRUE  // Recursive - patch all loaded modules
     );
 

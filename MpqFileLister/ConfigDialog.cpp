@@ -150,7 +150,7 @@ static void CenterDialog(HWND hDlg, HWND hParentWnd)
     }
 }
 
-static void RunDialogMessageLoop(HWND hDlg, HWND hParentWnd)
+static void RunDialogMessageLoop(HWND hDlg, HWND /*hParentWnd*/)
 {
     MSG msg;
     bool running = true;

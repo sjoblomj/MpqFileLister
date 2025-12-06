@@ -1,0 +1,3 @@
+LIBRARY MpqFileLister
+EXPORTS
+    GetMPQDraftPlugin @1

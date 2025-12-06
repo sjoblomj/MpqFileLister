@@ -38,6 +38,7 @@ add_library(MpqFileLister SHARED
 # Set output name to .qdp (MPQDraft plugin extension)
 set_target_properties(MpqFileLister PROPERTIES
     OUTPUT_NAME "MpqFileLister"
+    PREFIX ""
     SUFFIX ".qdp"
 )
 

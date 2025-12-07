@@ -11,8 +11,19 @@
 #include <cstring>
 #include <unordered_set>
 
-// SFileOpenFileEx ordinal in Storm.dll
-static constexpr uint32_t SFILEOPENFILEEX_ORDINAL = 0x10C;
+// Storm.dll ordinals
+static constexpr uint32_t SFILEOPENFILEEX_ORDINAL = 0x10C;       // 268
+static constexpr uint32_t SFILEGETFILEARCHIVE_ORDINAL = 0x108;   // 264
+static constexpr uint32_t SFILEGETARCHIVENAME_ORDINAL = 0x113;   // 275
+
+// Function pointer types for archive name lookup
+// BOOL SFileGetFileArchive(HANDLE hFile, HANDLE* phArchive)
+using SFileGetFileArchivePtr = BOOL (WINAPI*)(HANDLE, HANDLE*);
+// BOOL SFileGetArchiveName(HANDLE hArchive, char* szArchiveName, DWORD dwBufferSize)
+using SFileGetArchiveNamePtr = BOOL (WINAPI*)(HANDLE, char*, DWORD);
+
+static SFileGetFileArchivePtr s_SFileGetFileArchive = nullptr;
+static SFileGetArchiveNamePtr s_SFileGetArchiveName = nullptr;
 
 // Global plugin instance
 CMpqFileListerPlugin g_MpqFileLister;
@@ -152,31 +163,52 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSFileOpenFileEx(
     DWORD dwSearchScope,
     HANDLE* phFile)
 {
-    // Log the filename
+    // Call the original function first to see if the file was found
+    BOOL result = FALSE;
+    if (s_OriginalSFileOpenFileEx)
+        result = s_OriginalSFileOpenFileEx(hMpq, szFileName, dwSearchScope, phFile);
+
+    // Log the filename and archive
     if (szFileName && s_logFile.is_open())
     {
         std::lock_guard<std::mutex> lock(s_logMutex);
 
+        // Build the log entry: "filename" or "archive.mpq: filename"
+        std::string logEntry = szFileName;
+
+        // Try to get the archive name if the file was found and the option is enabled
+        if (g_printMpqArchive && result && phFile && *phFile && s_SFileGetFileArchive && s_SFileGetArchiveName)
+        {
+            // Get the archive handle from the file handle
+            HANDLE hArchive = nullptr;
+            if (s_SFileGetFileArchive(*phFile, &hArchive) && hArchive)
+            {
+                char archiveName[MAX_PATH] = {0};
+                if (s_SFileGetArchiveName(hArchive, archiveName, MAX_PATH) && archiveName[0])
+                {
+                    // Extract just the filename from the full path
+                    std::filesystem::path archivePath(archiveName);
+                    logEntry = archivePath.filename().string() + ": " + logEntry;
+                }
+            }
+        }
+
         bool shouldLog = true;
         if (g_logUniqueOnly)
         {
-            // Only log if we haven't seen this filename before
-            auto [it, inserted] = s_seenFiles.insert(szFileName);
+            // Only log if we haven't seen this entry before
+            auto [it, inserted] = s_seenFiles.insert(logEntry);
             shouldLog = inserted;
         }
 
         if (shouldLog)
         {
-            s_logFile << szFileName << "\n";
+            s_logFile << logEntry << "\n";
             s_logFile.flush();
         }
     }
 
-    // Call the original function
-    if (s_OriginalSFileOpenFileEx)
-        return s_OriginalSFileOpenFileEx(hMpq, szFileName, dwSearchScope, phFile);
-
-    return FALSE;
+    return result;
 }
 
 BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftServer)
@@ -245,11 +277,11 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
         return TRUE;  // Return TRUE to not abort the patch
     }
 
-    // Write header to the log file
-    if (s_logFile.is_open())
-    {
-        s_logFile << "=== MPQ File Access Log ===\n";
-    }
+    // Get SFileGetFileArchive and SFileGetArchiveName for logging which MPQ files come from (optional)
+    s_SFileGetFileArchive = reinterpret_cast<SFileGetFileArchivePtr>(
+        reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)SFILEGETFILEARCHIVE_ORDINAL)));
+    s_SFileGetArchiveName = reinterpret_cast<SFileGetArchiveNamePtr>(
+        reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)SFILEGETARCHIVENAME_ORDINAL)));
 
     // Patch the import table to redirect calls to our hook
     // Use reinterpret_cast via void* to avoid -Wcast-function-type warning
@@ -270,13 +302,6 @@ BOOL WINAPI CMpqFileListerPlugin::TerminatePlugin()
 {
     if (!m_bInitialized)
         return TRUE;
-
-    // Close the log file
-    if (s_logFile.is_open())
-    {
-        s_logFile << "=== End of Log ===\n";
-        s_logFile.close();
-    }
 
     // Clear the seen files set
     s_seenFiles.clear();

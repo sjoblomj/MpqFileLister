@@ -10,6 +10,7 @@
 
 // === Configuration variables ===
 extern bool g_logUniqueOnly;
+extern bool g_printMpqArchive;
 extern std::string g_logFileName;
 
 // === Configuration functions ===

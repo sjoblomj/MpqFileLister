@@ -8,9 +8,10 @@
 
 // === Configuration variables ===
 bool g_logUniqueOnly = true;
-std::string g_logFileName = "MPQDraft_FileLog.txt";
+bool g_printMpqArchive = false;
+std::string g_logFileName = "MpqFileLister_FileLog.txt";
 
-// Path to config file (next to the plugin DLL)
+// Path to the config file (next to the plugin DLL)
 static std::string g_configFilePath;
 
 void InitConfigPath(HMODULE hModule)
@@ -41,6 +42,10 @@ void LoadConfig()
         {
             g_logUniqueOnly = (line.substr(14) == "1");
         }
+        else if (line.rfind("PrintMpqArchive=", 0) == 0)
+        {
+            g_printMpqArchive = (line.substr(16) == "1");
+        }
         else if (line.rfind("LogFileName=", 0) == 0)
         {
             g_logFileName = line.substr(12);
@@ -58,6 +63,6 @@ void SaveConfig()
         return;
 
     file << "LogUniqueOnly=" << (g_logUniqueOnly ? "1" : "0") << "\n";
+    file << "PrintMpqArchive=" << (g_printMpqArchive ? "1" : "0") << "\n";
     file << "LogFileName=" << g_logFileName << "\n";
 }
-

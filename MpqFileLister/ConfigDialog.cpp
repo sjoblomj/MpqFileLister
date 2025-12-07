@@ -11,9 +11,11 @@
 // Dialog control IDs
 static constexpr int IDC_DESCRIPTION = 101;
 static constexpr int IDC_UNIQUE_CHECKBOX = 102;
-static constexpr int IDC_PATH_LABEL = 103;
-static constexpr int IDC_PATH_EDIT = 104;
-static constexpr int IDC_BROWSE_BUTTON = 105;
+static constexpr int IDC_RADIO_WITH_ARCHIVE = 103;
+static constexpr int IDC_RADIO_WITHOUT_ARCHIVE = 104;
+static constexpr int IDC_PATH_LABEL = 105;
+static constexpr int IDC_PATH_EDIT = 106;
+static constexpr int IDC_BROWSE_BUTTON = 107;
 static constexpr int IDC_OK_BUTTON = IDOK;
 static constexpr int IDC_CANCEL_BUTTON = IDCANCEL;
 
@@ -29,12 +31,15 @@ static const char* DESCRIPTION_TEXT =
     "game assets are loaded during gameplay."
     "\r\n\r\n";
 
-static const char* CHECKBOX_TEXT = "Log unique filenames only (no duplicates) ";
+static const char* UNIQUE_CHECKBOX_TEXT = "Log unique filenames only (no duplicates)";
+static const char* RADIO_WITH_ARCHIVE_TEXT = "Print '<MPQ archive>: <filename>'";
+static const char* RADIO_WITHOUT_ARCHIVE_TEXT = "Print '<filename>'";
 static const char* PATH_LABEL_TEXT = "Log file name (filename only to log to the game's directory):";
 
 // Layout constants
 static constexpr int MARGIN = 25;
 static constexpr int SPACING = 25;
+static constexpr int SMALL_SPACING = 8;  // For related items like radio buttons
 static constexpr int BUTTON_HEIGHT = 60;
 static constexpr int EDIT_HEIGHT = 50;
 static constexpr int MIN_DLG_WIDTH = 300;
@@ -87,6 +92,9 @@ static void HandleOkButton(HWND hDlg)
     // Save checkbox state
     g_logUniqueOnly = (IsDlgButtonChecked(hDlg, IDC_UNIQUE_CHECKBOX) == BST_CHECKED);
 
+    // Save radio button state
+    g_printMpqArchive = (IsDlgButtonChecked(hDlg, IDC_RADIO_WITH_ARCHIVE) == BST_CHECKED);
+
     // Save path
     char path[MAX_PATH];
     GetDlgItemTextA(hDlg, IDC_PATH_EDIT, path, MAX_PATH);
@@ -100,15 +108,21 @@ static void CalculateDialogLayout(HDC hdc)
 {
     // Measure all text elements to determine required sizes
     SIZE descSize = MeasureText(hdc, DESCRIPTION_TEXT, 400);
-    SIZE checkboxSize = MeasureText(hdc, CHECKBOX_TEXT);
+    SIZE uniqueCheckboxSize = MeasureText(hdc, UNIQUE_CHECKBOX_TEXT);
+    SIZE radioWithArchiveSize = MeasureText(hdc, RADIO_WITH_ARCHIVE_TEXT);
+    SIZE radioWithoutArchiveSize = MeasureText(hdc, RADIO_WITHOUT_ARCHIVE_TEXT);
     SIZE labelSize = MeasureText(hdc, PATH_LABEL_TEXT);
     SIZE browseSize = MeasureText(hdc, "Browse...");
     SIZE okSize = MeasureText(hdc, "OK");
     SIZE cancelSize = MeasureText(hdc, "Cancel");
 
-    // Add padding for checkbox (checkbox square + spacing)
-    checkboxSize.cx += 20;
-    checkboxSize.cy += 4;
+    // Add padding for checkbox/radio buttons (button circle/square + spacing)
+    uniqueCheckboxSize.cx += 20;
+    uniqueCheckboxSize.cy += 4;
+    radioWithArchiveSize.cx += 20;
+    radioWithArchiveSize.cy += 4;
+    radioWithoutArchiveSize.cx += 20;
+    radioWithoutArchiveSize.cy += 4;
 
     // Add padding for buttons
     browseSize.cx += 16;
@@ -120,7 +134,9 @@ static void CalculateDialogLayout(HDC hdc)
 
     // Calculate required width (widest element + margins)
     int contentWidth = descSize.cx;
-    if (checkboxSize.cx > contentWidth) contentWidth = checkboxSize.cx;
+    if (uniqueCheckboxSize.cx > contentWidth) contentWidth = uniqueCheckboxSize.cx;
+    if (radioWithArchiveSize.cx > contentWidth) contentWidth = radioWithArchiveSize.cx;
+    if (radioWithoutArchiveSize.cx > contentWidth) contentWidth = radioWithoutArchiveSize.cx;
     if (labelSize.cx > contentWidth) contentWidth = labelSize.cx;
 
     g_dlgWidth = contentWidth + (MARGIN * 2);
@@ -128,12 +144,14 @@ static void CalculateDialogLayout(HDC hdc)
 
     // Calculate required height
     int y = MARGIN;
-    y += descSize.cy + SPACING;      // Description
-    y += checkboxSize.cy + SPACING;  // Checkbox
-    y += labelSize.cy + SPACING;     // Path label
-    y += EDIT_HEIGHT + SPACING;      // Edit + Browse row
-    y += SPACING;                    // Extra spacing before buttons
-    y += BUTTON_HEIGHT + MARGIN;     // OK/Cancel buttons
+    y += descSize.cy + SPACING;                    // Description
+    y += uniqueCheckboxSize.cy + SPACING;          // Unique checkbox
+    y += radioWithArchiveSize.cy + SMALL_SPACING;  // Radio: with archive
+    y += radioWithoutArchiveSize.cy + SPACING;     // Radio: without archive
+    y += labelSize.cy + SPACING;                   // Path label
+    y += EDIT_HEIGHT + SPACING;                    // Edit + Browse row
+    y += SPACING;                                  // Extra spacing before buttons
+    y += BUTTON_HEIGHT + MARGIN;                   // OK/Cancel buttons
 
     g_dlgHeight = y;
 }
@@ -151,9 +169,15 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
 
     // Measure individual elements for positioning
     SIZE descSize = MeasureText(hdc, DESCRIPTION_TEXT, g_dlgWidth - (MARGIN * 2));
-    SIZE checkboxSize = MeasureText(hdc, CHECKBOX_TEXT);
-    checkboxSize.cx += 20;
-    checkboxSize.cy += 4;
+    SIZE uniqueCheckboxSize = MeasureText(hdc, UNIQUE_CHECKBOX_TEXT);
+    uniqueCheckboxSize.cx += 20;
+    uniqueCheckboxSize.cy += 4;
+    SIZE radioWithArchiveSize = MeasureText(hdc, RADIO_WITH_ARCHIVE_TEXT);
+    radioWithArchiveSize.cx += 20;
+    radioWithArchiveSize.cy += 4;
+    SIZE radioWithoutArchiveSize = MeasureText(hdc, RADIO_WITHOUT_ARCHIVE_TEXT);
+    radioWithoutArchiveSize.cx += 20;
+    radioWithoutArchiveSize.cy += 4;
     SIZE labelSize = MeasureText(hdc, PATH_LABEL_TEXT);
     SIZE browseSize = MeasureText(hdc, "Browse...");
     browseSize.cx += 16;
@@ -178,16 +202,39 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     SendMessage(hDesc, WM_SETFONT, (WPARAM)hFont, TRUE);
     y += descSize.cy + SPACING;
 
-    // Checkbox
-    HWND hCheck = CreateWindowExA(
-        0, "BUTTON", CHECKBOX_TEXT,
+    // Unique checkbox
+    HWND hUniqueCheck = CreateWindowExA(
+        0, "BUTTON", UNIQUE_CHECKBOX_TEXT,
         WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        MARGIN, y, checkboxSize.cx, checkboxSize.cy,
+        MARGIN, y, uniqueCheckboxSize.cx + SPACING, uniqueCheckboxSize.cy,
         hDlg, (HMENU)IDC_UNIQUE_CHECKBOX, hModule, nullptr
     );
-    SendMessage(hCheck, WM_SETFONT, (WPARAM)hFont, TRUE);
+    SendMessage(hUniqueCheck, WM_SETFONT, (WPARAM)hFont, TRUE);
     CheckDlgButton(hDlg, IDC_UNIQUE_CHECKBOX, g_logUniqueOnly ? BST_CHECKED : BST_UNCHECKED);
-    y += checkboxSize.cy + SPACING;
+    y += uniqueCheckboxSize.cy + SPACING;
+
+    // Radio button: with archive (first in group)
+    HWND hRadioWithArchive = CreateWindowExA(
+        0, "BUTTON", RADIO_WITH_ARCHIVE_TEXT,
+        WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
+        MARGIN, y, radioWithArchiveSize.cx + SPACING, radioWithArchiveSize.cy,
+        hDlg, (HMENU)IDC_RADIO_WITH_ARCHIVE, hModule, nullptr
+    );
+    SendMessage(hRadioWithArchive, WM_SETFONT, (WPARAM)hFont, TRUE);
+    y += radioWithArchiveSize.cy + SMALL_SPACING;
+
+    // Radio button: without archive
+    HWND hRadioWithoutArchive = CreateWindowExA(
+        0, "BUTTON", RADIO_WITHOUT_ARCHIVE_TEXT,
+        WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+        MARGIN, y, radioWithoutArchiveSize.cx + SPACING, radioWithoutArchiveSize.cy,
+        hDlg, (HMENU)IDC_RADIO_WITHOUT_ARCHIVE, hModule, nullptr
+    );
+    SendMessage(hRadioWithoutArchive, WM_SETFONT, (WPARAM)hFont, TRUE);
+    y += radioWithoutArchiveSize.cy + SPACING;
+
+    // Set initial radio button selection
+    CheckDlgButton(hDlg, g_printMpqArchive ? IDC_RADIO_WITH_ARCHIVE : IDC_RADIO_WITHOUT_ARCHIVE, BST_CHECKED);
 
     // Path label
     HWND hLabel = CreateWindowExA(
@@ -211,10 +258,11 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     );
     SendMessage(hEdit, WM_SETFONT, (WPARAM)hFont, TRUE);
 
+    int browseX = MARGIN + editWidth + SPACING;
     HWND hBrowse = CreateWindowExA(
         0, "BUTTON", "Browse...",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        MARGIN + editWidth + SPACING, y, browseWidth, EDIT_HEIGHT,
+        browseX, y, browseWidth, EDIT_HEIGHT,
         hDlg, (HMENU)IDC_BROWSE_BUTTON, hModule, nullptr
     );
     SendMessage(hBrowse, WM_SETFONT, (WPARAM)hFont, TRUE);
@@ -222,13 +270,14 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
 
     // OK and Cancel buttons (right-aligned)
     int buttonY = y;
-    int cancelX = g_dlgWidth - MARGIN - cancelSize.cx;
-    int okX = cancelX - SPACING - okSize.cx;
+    int cancelX = browseX;
+    int cancelWidth = browseWidth;
+    int okX = cancelX - SPACING - okSize.cx * 4;
 
     HWND hOK = CreateWindowExA(
         0, "BUTTON", "OK",
         WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
-        okX, buttonY, okSize.cx, BUTTON_HEIGHT,
+        okX, buttonY, okSize.cx * 4, BUTTON_HEIGHT,
         hDlg, (HMENU)IDC_OK_BUTTON, hModule, nullptr
     );
     SendMessage(hOK, WM_SETFONT, (WPARAM)hFont, TRUE);
@@ -236,14 +285,17 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     HWND hCancel = CreateWindowExA(
         0, "BUTTON", "Cancel",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        cancelX, buttonY, cancelSize.cx, BUTTON_HEIGHT,
+        cancelX, buttonY, cancelWidth, BUTTON_HEIGHT,
         hDlg, (HMENU)IDC_CANCEL_BUTTON, hModule, nullptr
     );
     SendMessage(hCancel, WM_SETFONT, (WPARAM)hFont, TRUE);
 
+    // Calculate actual height based on where buttons ended up
+    int actualHeight = buttonY + BUTTON_HEIGHT + MARGIN;
+
     // Resize the dialog to fit the content
     // Account for window chrome (title bar, borders)
-    RECT rcClient = {0, 0, g_dlgWidth, g_dlgHeight};
+    RECT rcClient = {0, 0, g_dlgWidth, actualHeight};
     AdjustWindowRectEx(&rcClient, WS_POPUP | WS_CAPTION | WS_SYSMENU, FALSE, WS_EX_DLGMODALFRAME);
     int windowWidth = rcClient.right - rcClient.left;
     int windowHeight = rcClient.bottom - rcClient.top;
@@ -347,14 +399,14 @@ void ShowConfigDialog(HWND hParentWnd, HMODULE hModule)
     // Register our custom window class
     RegisterDialogClass(hModule);
 
-    // Create dialog with minimal initial size - it will be resized after controls are created
+    // Create dialog with a reasonable initial size - it will be resized after controls are created
     HWND hDlg = CreateWindowExA(
         WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
         DIALOG_CLASS_NAME,
         "MPQFileLister - Configuration",
         WS_POPUP | WS_CAPTION | WS_SYSMENU,  // Not visible initially
         CW_USEDEFAULT, CW_USEDEFAULT,
-        100, 100,  // Temporary size
+        500, 500,  // Temporary size (will be resized)
         hParentWnd,
         nullptr,
         hModule,
@@ -370,6 +422,7 @@ void ShowConfigDialog(HWND hParentWnd, HMODULE hModule)
 
     // Now show the dialog
     ShowWindow(hDlg, SW_SHOW);
+    UpdateWindow(hDlg);
 
     // Disable the parent window for modal behavior
     if (hParentWnd)

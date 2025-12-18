@@ -11,16 +11,19 @@
 // Dialog control IDs
 static constexpr int IDC_DESCRIPTION = 101;
 static constexpr int IDC_UNIQUE_CHECKBOX = 102;
-static constexpr int IDC_RADIO_TIMESTAMP_ARCHIVE_FILENAME = 103;
-static constexpr int IDC_RADIO_ARCHIVE_FILENAME = 104;
-static constexpr int IDC_RADIO_TIMESTAMP_FILENAME = 105;
-static constexpr int IDC_RADIO_FILENAME_ONLY = 106;
-static constexpr int IDC_PATH_LABEL = 107;
-static constexpr int IDC_PATH_EDIT = 108;
-static constexpr int IDC_BROWSE_BUTTON = 109;
-static constexpr int IDC_TARGET_GAME_GROUPBOX = 110;
-static constexpr int IDC_RADIO_DIABLO1 = 111;
-static constexpr int IDC_RADIO_LATER = 112;
+static constexpr int IDC_LOG_FORMAT_GROUPBOX = 103;
+static constexpr int IDC_TIMESTAMP_INFO_LABEL = 104;
+static constexpr int IDC_RADIO_TIMESTAMP_ARCHIVE_FILENAME = 105;
+static constexpr int IDC_RADIO_ARCHIVE_FILENAME = 106;
+static constexpr int IDC_RADIO_TIMESTAMP_FILENAME = 107;
+static constexpr int IDC_RADIO_FILENAME_ONLY = 108;
+static constexpr int IDC_LOG_FILENAME_GROUPBOX = 109;
+static constexpr int IDC_PATH_LABEL = 110;
+static constexpr int IDC_PATH_EDIT = 111;
+static constexpr int IDC_BROWSE_BUTTON = 112;
+static constexpr int IDC_TARGET_GAME_GROUPBOX = 113;
+static constexpr int IDC_RADIO_DIABLO1 = 114;
+static constexpr int IDC_RADIO_LATER = 115;
 static constexpr int IDC_OK_BUTTON = IDOK;
 static constexpr int IDC_CANCEL_BUTTON = IDCANCEL;
 
@@ -38,14 +41,17 @@ static const char* DESCRIPTION_TEXT =
     "\r\n\r\n";
 
 static const char* UNIQUE_CHECKBOX_TEXT = "Log unique filenames only (no duplicates)";
-static const char* RADIO_TIMESTAMP_ARCHIVE_FILENAME_TEXT = "Print '<timestamp> <MPQ archive>: <filename>'";
-static const char* RADIO_ARCHIVE_FILENAME_TEXT = "Print '<MPQ archive>: <filename>'";
-static const char* RADIO_TIMESTAMP_FILENAME_TEXT = "Print '<timestamp> <filename>'";
-static const char* RADIO_FILENAME_ONLY_TEXT = "Print '<filename>'";
-static const char* PATH_LABEL_TEXT = "Log file name (filename only to log to the game's directory):";
+static const char* LOG_FORMAT_GROUPBOX_TEXT = "Log format";
+static const char* TIMESTAMP_INFO_TEXT = "Timestamp is in milliseconds since epoch";
+static const char* RADIO_TIMESTAMP_ARCHIVE_FILENAME_TEXT = "'<timestamp> <MPQ archive>: <filename>'";
+static const char* RADIO_ARCHIVE_FILENAME_TEXT = "'<MPQ archive>: <filename>'";
+static const char* RADIO_TIMESTAMP_FILENAME_TEXT = "'<timestamp> <filename>'";
+static const char* RADIO_FILENAME_ONLY_TEXT = "'<filename>'";
+static const char* LOG_FILENAME_GROUPBOX_TEXT = "Log file name";
+static const char* PATH_LABEL_TEXT = "Put filename only (as opposed to full path) to create the file in the game's directory";
 static const char* TARGET_GAME_GROUPBOX_TEXT = "Target game";
 static const char* RADIO_DIABLO1_TEXT = "Diablo I";
-static const char* RADIO_LATER_TEXT = "Later games (StarCraft, Diablo II, Warcraft II, etc.)";
+static const char* RADIO_LATER_TEXT = "Later games (StarCraft, Diablo II, WarCraft II, etc.)";
 
 // Layout constants
 static constexpr int MARGIN = 25;
@@ -53,7 +59,7 @@ static constexpr int SPACING = 25;
 static constexpr int SMALL_SPACING = 8;  // For related items like radio buttons
 static constexpr int BUTTON_HEIGHT = 60;
 static constexpr int EDIT_HEIGHT = 50;
-static constexpr int MIN_DLG_WIDTH = 300;
+static constexpr int MIN_DLG_WIDTH = 400;
 
 // Calculated dialog dimensions (set during control creation)
 static int g_dlgWidth = 0;
@@ -133,6 +139,7 @@ static void CalculateDialogLayout(HDC hdc)
     // Measure all text elements to determine required sizes
     SIZE descSize = MeasureText(hdc, DESCRIPTION_TEXT, 400);
     SIZE uniqueCheckboxSize = MeasureText(hdc, UNIQUE_CHECKBOX_TEXT);
+    SIZE timestampInfoSize = MeasureText(hdc, TIMESTAMP_INFO_TEXT);
     SIZE radio1Size = MeasureText(hdc, RADIO_TIMESTAMP_ARCHIVE_FILENAME_TEXT);
     SIZE radio2Size = MeasureText(hdc, RADIO_ARCHIVE_FILENAME_TEXT);
     SIZE radio3Size = MeasureText(hdc, RADIO_TIMESTAMP_FILENAME_TEXT);
@@ -186,15 +193,17 @@ static void CalculateDialogLayout(HDC hdc)
     int y = MARGIN;
     y += descSize.cy + SPACING;                    // Description
     y += uniqueCheckboxSize.cy + SPACING;          // Unique checkbox
-    y += radio1Size.cy + SMALL_SPACING;            // Radio 1 (log format)
-    y += radio2Size.cy + SMALL_SPACING;            // Radio 2 (log format)
-    y += radio3Size.cy + SMALL_SPACING;            // Radio 3 (log format)
-    y += radio4Size.cy + SPACING;                  // Radio 4 (log format)
-    y += labelSize.cy + SPACING;                   // Path label
-    y += EDIT_HEIGHT + SPACING;                    // Edit + Browse row
+    // Group box for log format
+    int logFormatGroupBoxHeight = 20 + timestampInfoSize.cy + SMALL_SPACING +
+                                   radio1Size.cy + SMALL_SPACING + radio2Size.cy + SMALL_SPACING +
+                                   radio3Size.cy + SMALL_SPACING + radio4Size.cy + 15;
+    y += logFormatGroupBoxHeight + SPACING;        // Log format group box
+    // Group box for log file name
+    int logFilenameGroupBoxHeight = 20 + labelSize.cy + SPACING + EDIT_HEIGHT + 15;
+    y += logFilenameGroupBoxHeight + SPACING;      // Log file name group box
     // Group box for target game
-    int groupBoxHeight = 20 + radioDiablo1Size.cy + SMALL_SPACING + radioLaterSize.cy + 15;
-    y += groupBoxHeight + SPACING;                 // Target game group box
+    int targetGameGroupBoxHeight = 20 + radioDiablo1Size.cy + SMALL_SPACING + radioLaterSize.cy + 15;
+    y += targetGameGroupBoxHeight + SPACING;       // Target game group box
     y += SPACING;                                  // Extra spacing before buttons
     y += BUTTON_HEIGHT + MARGIN;                   // OK/Cancel buttons
 
@@ -235,6 +244,7 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     SIZE radioLaterSize = MeasureText(hdc, RADIO_LATER_TEXT);
     radioLaterSize.cx += 20;
     radioLaterSize.cy += 4;
+    SIZE timestampInfoSize = MeasureText(hdc, TIMESTAMP_INFO_TEXT);
     SIZE labelSize = MeasureText(hdc, PATH_LABEL_TEXT);
     SIZE browseSize = MeasureText(hdc, "Browse...");
     browseSize.cx += 16;
@@ -270,45 +280,71 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     CheckDlgButton(hDlg, IDC_UNIQUE_CHECKBOX, g_logUniqueOnly ? BST_CHECKED : BST_UNCHECKED);
     y += uniqueCheckboxSize.cy + SPACING;
 
+    // Log format group box
+    int logFormatGroupBoxHeight = 35 + timestampInfoSize.cy + SMALL_SPACING +
+                                   radio1Size.cy + SMALL_SPACING + radio2Size.cy + SMALL_SPACING +
+                                   radio3Size.cy + SMALL_SPACING + radio4Size.cy + 15;
+    HWND hLogFormatGroupBox = CreateWindowExA(
+        0, "BUTTON", LOG_FORMAT_GROUPBOX_TEXT,
+        WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        MARGIN, y, contentWidth, logFormatGroupBoxHeight,
+        hDlg, (HMENU)IDC_LOG_FORMAT_GROUPBOX, hModule, nullptr
+    );
+    SendMessage(hLogFormatGroupBox, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+    // Timestamp info label inside the log format group box
+    int logFormatInnerY = y + 35;  // Offset for group box title
+    int logFormatInnerX = MARGIN + 10;  // Indent inside group box
+
+    HWND hTimestampInfo = CreateWindowExA(
+        0, "STATIC", TIMESTAMP_INFO_TEXT,
+        WS_CHILD | WS_VISIBLE | SS_LEFT,
+        logFormatInnerX, logFormatInnerY, timestampInfoSize.cx, timestampInfoSize.cy,
+        hDlg, (HMENU)IDC_TIMESTAMP_INFO_LABEL, hModule, nullptr
+    );
+    SendMessage(hTimestampInfo, WM_SETFONT, (WPARAM)hFont, TRUE);
+    logFormatInnerY += timestampInfoSize.cy + SMALL_SPACING;
+
+    // Radio buttons inside the log format group box
+
     // Radio button 1: timestamp + archive + filename (first in group)
     HWND hRadio1 = CreateWindowExA(
         0, "BUTTON", RADIO_TIMESTAMP_ARCHIVE_FILENAME_TEXT,
         WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
-        MARGIN, y, radio1Size.cx + SPACING, radio1Size.cy,
+        logFormatInnerX, logFormatInnerY, radio1Size.cx + SPACING, radio1Size.cy,
         hDlg, (HMENU)IDC_RADIO_TIMESTAMP_ARCHIVE_FILENAME, hModule, nullptr
     );
     SendMessage(hRadio1, WM_SETFONT, (WPARAM)hFont, TRUE);
-    y += radio1Size.cy + SMALL_SPACING;
+    logFormatInnerY += radio1Size.cy + SMALL_SPACING;
 
     // Radio button 2: archive + filename
     HWND hRadio2 = CreateWindowExA(
         0, "BUTTON", RADIO_ARCHIVE_FILENAME_TEXT,
         WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        MARGIN, y, radio2Size.cx + SPACING, radio2Size.cy,
+        logFormatInnerX, logFormatInnerY, radio2Size.cx + SPACING, radio2Size.cy,
         hDlg, (HMENU)IDC_RADIO_ARCHIVE_FILENAME, hModule, nullptr
     );
     SendMessage(hRadio2, WM_SETFONT, (WPARAM)hFont, TRUE);
-    y += radio2Size.cy + SMALL_SPACING;
+    logFormatInnerY += radio2Size.cy + SMALL_SPACING;
 
     // Radio button 3: timestamp + filename
     HWND hRadio3 = CreateWindowExA(
         0, "BUTTON", RADIO_TIMESTAMP_FILENAME_TEXT,
         WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        MARGIN, y, radio3Size.cx + SPACING, radio3Size.cy,
+        logFormatInnerX, logFormatInnerY, radio3Size.cx + SPACING, radio3Size.cy,
         hDlg, (HMENU)IDC_RADIO_TIMESTAMP_FILENAME, hModule, nullptr
     );
     SendMessage(hRadio3, WM_SETFONT, (WPARAM)hFont, TRUE);
-    y += radio3Size.cy + SMALL_SPACING;
+    logFormatInnerY += radio3Size.cy + SMALL_SPACING;
 
     // Radio button 4: filename only
     HWND hRadio4 = CreateWindowExA(
         0, "BUTTON", RADIO_FILENAME_ONLY_TEXT,
         WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        MARGIN, y, radio4Size.cx + SPACING, radio4Size.cy,
+        logFormatInnerX, logFormatInnerY, radio4Size.cx + SPACING, radio4Size.cy,
         hDlg, (HMENU)IDC_RADIO_FILENAME_ONLY, hModule, nullptr
     );
     SendMessage(hRadio4, WM_SETFONT, (WPARAM)hFont, TRUE);
-    y += radio4Size.cy + SPACING;
 
     // Set initial radio button selection based on g_logFormat
     int selectedRadio = IDC_RADIO_FILENAME_ONLY;
@@ -329,67 +365,84 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     }
     CheckDlgButton(hDlg, selectedRadio, BST_CHECKED);
 
+    y += logFormatGroupBoxHeight + SPACING;
+
+    // Log file name group box
+    int logFilenameGroupBoxHeight = 35 + labelSize.cy + SPACING + EDIT_HEIGHT + 15;
+    HWND hLogFilenameGroupBox = CreateWindowExA(
+        0, "BUTTON", LOG_FILENAME_GROUPBOX_TEXT,
+        WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
+        MARGIN, y, contentWidth, logFilenameGroupBoxHeight,
+        hDlg, (HMENU)IDC_LOG_FILENAME_GROUPBOX, hModule, nullptr
+    );
+    SendMessage(hLogFilenameGroupBox, WM_SETFONT, (WPARAM)hFont, TRUE);
+
+    // Controls inside the log file name group box
+    int logFilenameInnerY = y + 35;  // Offset for group box title
+    int logFilenameInnerX = MARGIN + 10;  // Indent inside group box
+
     // Path label
     HWND hLabel = CreateWindowExA(
         0, "STATIC", PATH_LABEL_TEXT,
         WS_CHILD | WS_VISIBLE | SS_LEFT,
-        MARGIN, y, labelSize.cx, labelSize.cy,
+        logFilenameInnerX, logFilenameInnerY, labelSize.cx, labelSize.cy,
         hDlg, (HMENU)IDC_PATH_LABEL, hModule, nullptr
     );
     SendMessage(hLabel, WM_SETFONT, (WPARAM)hFont, TRUE);
-    y += labelSize.cy + SPACING;
+    logFilenameInnerY += labelSize.cy + SPACING;
 
     // Path edit and Browse button on same row
     int browseWidth = browseSize.cx;
-    int editWidth = contentWidth - browseWidth - SPACING;
+    int editWidth = contentWidth - browseWidth - SPACING - 20;  // Account for group box margins
 
     HWND hEdit = CreateWindowExA(
         WS_EX_CLIENTEDGE, "EDIT", g_logFileName.c_str(),
         WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-        MARGIN, y, editWidth, EDIT_HEIGHT,
+        logFilenameInnerX, logFilenameInnerY, editWidth, EDIT_HEIGHT,
         hDlg, (HMENU)IDC_PATH_EDIT, hModule, nullptr
     );
     SendMessage(hEdit, WM_SETFONT, (WPARAM)hFont, TRUE);
 
-    int browseX = MARGIN + editWidth + SPACING;
+    int browseX = logFilenameInnerX + editWidth + SPACING;
     HWND hBrowse = CreateWindowExA(
         0, "BUTTON", "Browse...",
         WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        browseX, y, browseWidth, EDIT_HEIGHT,
+        browseX, logFilenameInnerY, browseWidth, EDIT_HEIGHT,
         hDlg, (HMENU)IDC_BROWSE_BUTTON, hModule, nullptr
     );
     SendMessage(hBrowse, WM_SETFONT, (WPARAM)hFont, TRUE);
-    y += EDIT_HEIGHT + SPACING;
+
+    y += logFilenameGroupBoxHeight + SPACING;
 
     // Target game group box
-    int groupBoxHeight = 20 + radioDiablo1Size.cy + SMALL_SPACING + radioLaterSize.cy + 15;
+    int targetGameGroupBoxHeight = 35 + radioDiablo1Size.cy + SMALL_SPACING + radioLaterSize.cy + 15;
     HWND hTargetGameGroupBox = CreateWindowExA(
         0, "BUTTON", TARGET_GAME_GROUPBOX_TEXT,
         WS_CHILD | WS_VISIBLE | BS_GROUPBOX,
-        MARGIN, y, contentWidth, groupBoxHeight,
+        MARGIN, y, contentWidth, targetGameGroupBoxHeight,
         hDlg, (HMENU)IDC_TARGET_GAME_GROUPBOX, hModule, nullptr
     );
     SendMessage(hTargetGameGroupBox, WM_SETFONT, (WPARAM)hFont, TRUE);
 
-    // Radio buttons inside the group box
-    int groupBoxInnerY = y + 20;  // Offset for group box title
-    int groupBoxInnerX = MARGIN + 10;  // Indent inside group box
+    // Radio buttons inside the target game group box
+    int targetGameInnerY = y + 35;  // Offset for group box title
+    int targetGameInnerX = MARGIN + 10;  // Indent inside group box
 
     // Radio button: Diablo 1 (first in target game group)
     HWND hRadioDiablo1 = CreateWindowExA(
         0, "BUTTON", RADIO_DIABLO1_TEXT,
         WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
-        groupBoxInnerX, groupBoxInnerY, radioDiablo1Size.cx + SPACING, radioDiablo1Size.cy,
+        targetGameInnerX, targetGameInnerY, radioDiablo1Size.cx + SPACING, radioDiablo1Size.cy,
         hDlg, (HMENU)IDC_RADIO_DIABLO1, hModule, nullptr
     );
     SendMessage(hRadioDiablo1, WM_SETFONT, (WPARAM)hFont, TRUE);
-    groupBoxInnerY += radioDiablo1Size.cy + SMALL_SPACING;
+    targetGameInnerY += radioDiablo1Size.cy + SMALL_SPACING;
 
     // Radio button: Later games
     HWND hRadioLater = CreateWindowExA(
         0, "BUTTON", RADIO_LATER_TEXT,
         WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        groupBoxInnerX, groupBoxInnerY, radioLaterSize.cx + SPACING, radioLaterSize.cy,
+        targetGameInnerX, targetGameInnerY, radioLaterSize.cx + SPACING, radioLaterSize.cy,
         hDlg, (HMENU)IDC_RADIO_LATER, hModule, nullptr
     );
     SendMessage(hRadioLater, WM_SETFONT, (WPARAM)hFont, TRUE);
@@ -398,7 +451,7 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     int selectedGameRadio = (g_targetGame == TargetGame::DIABLO_1) ? IDC_RADIO_DIABLO1 : IDC_RADIO_LATER;
     CheckDlgButton(hDlg, selectedGameRadio, BST_CHECKED);
 
-    y += groupBoxHeight + SPACING + SPACING;
+    y += targetGameGroupBoxHeight + SPACING + SPACING;
 
     // OK and Cancel buttons (right-aligned)
     int buttonY = y;

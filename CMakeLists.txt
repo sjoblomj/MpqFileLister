@@ -1,5 +1,5 @@
 # MpqFileLister - MPQDraft Plugin
-# This plugin logs all SFileOpenFileEx calls to a file
+# This plugin logs all SFileOpenFile and SFileOpenFileEx calls to a file
 
 cmake_minimum_required(VERSION 3.15)
 project(MpqFileLister VERSION 1.0 LANGUAGES CXX)

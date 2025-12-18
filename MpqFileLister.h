@@ -1,8 +1,8 @@
 /*
-    MpqFileLister - An MPQDraft plugin that logs all SFileOpenFileEx calls
-    
-    This plugin hooks the Storm.dll SFileOpenFileEx function and logs
-    every filename that the game attempts to open from MPQ archives.
+    MpqFileLister - An MPQDraft plugin that logs all SFileOpenFile and SFileOpenFileEx calls
+
+    This plugin hooks the Storm.dll SFileOpenFile and SFileOpenFileEx functions
+    and logs every filename that the game attempts to open from MPQ archives.
 */
 
 #ifndef MPQFILELISTER_H
@@ -24,7 +24,14 @@ constexpr uint32_t PLUGIN_ID = 0x4d51464c;  // "MQFL" in hex
 struct IMPQDraftPlugin;
 struct IMPQDraftServer;
 
-// Storm function signature for SFileOpenFileEx (ordinal 0x10C)
+// Storm function signatures
+// SFileOpenFile (ordinal 0x10B)
+typedef BOOL (WINAPI *SFileOpenFilePtr)(
+    LPCSTR lpFileName,
+    HANDLE* hFile
+);
+
+// SFileOpenFileEx (ordinal 0x10C)
 typedef BOOL (WINAPI *SFileOpenFileExPtr)(
     HANDLE hMpq,
     const char* szFileName,
@@ -40,15 +47,24 @@ private:
     HMODULE m_hStorm;
     bool m_bInitialized;
 
-    // Original function pointer (static for use in static hook function)
+    // Original function pointers (static for use in static hook functions)
+    static SFileOpenFilePtr s_OriginalSFileOpenFile;
     static SFileOpenFileExPtr s_OriginalSFileOpenFileEx;
 
     // Logging (using standard C++)
     static std::ofstream s_logFile;
     static std::mutex s_logMutex;
     static std::string s_logFilePath;
-    
-    // Our hook function
+
+    // Helper function for logging file access
+    static void LogFileAccess(const char* fileName, HANDLE fileHandle);
+
+    // Our hook functions
+    static BOOL WINAPI HookedSFileOpenFile(
+        LPCSTR lpFileName,
+        HANDLE* hFile
+    );
+
     static BOOL WINAPI HookedSFileOpenFileEx(
         HANDLE hMpq,
         const char* szFileName,
@@ -59,9 +75,9 @@ private:
 public:
     CMpqFileListerPlugin();
     ~CMpqFileListerPlugin();
-    
+
     void SetThisModule(HMODULE hModule) { m_hThisModule = hModule; }
-    
+
     // IMPQDraftPlugin interface methods
     BOOL WINAPI Identify(DWORD* lpdwPluginID);
     BOOL WINAPI GetPluginName(char* lpszPluginName, DWORD nNameBufferLength);

@@ -1,5 +1,5 @@
 /*
-    MpqFileLister - An MPQDraft plugin that logs all SFileOpenFileEx calls
+    MpqFileLister - An MPQDraft plugin that logs all SFileOpenFile and SFileOpenFileEx calls
 */
 
 #include "MpqFileLister.h"
@@ -12,7 +12,8 @@
 #include <unordered_set>
 
 // Storm.dll ordinals
-static constexpr uint32_t SFILEOPENFILEEX_ORDINAL = 0x10C;       // 268
+static constexpr uint32_t SFILEOPENFILE_ORDINAL       = 0x10B;   // 267
+static constexpr uint32_t SFILEOPENFILEEX_ORDINAL     = 0x10C;   // 268
 static constexpr uint32_t SFILEGETFILEARCHIVE_ORDINAL = 0x108;   // 264
 static constexpr uint32_t SFILEGETARCHIVENAME_ORDINAL = 0x113;   // 275
 
@@ -29,6 +30,7 @@ static SFileGetArchiveNamePtr s_SFileGetArchiveName = nullptr;
 CMpqFileListerPlugin g_MpqFileLister;
 
 // Static member initialization
+SFileOpenFilePtr CMpqFileListerPlugin::s_OriginalSFileOpenFile = nullptr;
 SFileOpenFileExPtr CMpqFileListerPlugin::s_OriginalSFileOpenFileEx = nullptr;
 std::ofstream CMpqFileListerPlugin::s_logFile;
 std::mutex CMpqFileListerPlugin::s_logMutex;
@@ -156,6 +158,66 @@ BOOL WINAPI CMpqFileListerPlugin::GetModules(void* lpPluginModules, DWORD* lpnNu
     return TRUE;
 }
 
+// Helper function to log file access (shared by both hook functions)
+void CMpqFileListerPlugin::LogFileAccess(const char* fileName, HANDLE fileHandle)
+{
+    if (!fileName || !s_logFile.is_open())
+        return;
+
+    std::lock_guard<std::mutex> lock(s_logMutex);
+
+    // Build the log entry: "filename" or "archive.mpq: filename"
+    std::string logEntry = fileName;
+
+    // Try to get the archive name if the file was found and the option is enabled
+    if (g_printMpqArchive && fileHandle && s_SFileGetFileArchive && s_SFileGetArchiveName)
+    {
+        // Get the archive handle from the file handle
+        HANDLE hArchive = nullptr;
+        if (s_SFileGetFileArchive(fileHandle, &hArchive) && hArchive)
+        {
+            char archiveName[MAX_PATH] = {0};
+            if (s_SFileGetArchiveName(hArchive, archiveName, MAX_PATH) && archiveName[0])
+            {
+                // Extract just the filename from the full path
+                std::filesystem::path archivePath(archiveName);
+                logEntry = archivePath.filename().string() + ": " + logEntry;
+            }
+        }
+    }
+
+    bool shouldLog = true;
+    if (g_logUniqueOnly)
+    {
+        // Only log if we haven't seen this entry before
+        auto [it, inserted] = s_seenFiles.insert(logEntry);
+        shouldLog = inserted;
+    }
+
+    if (shouldLog)
+    {
+        s_logFile << logEntry << "\n";
+        s_logFile.flush();
+    }
+}
+
+// The hook function - this is called instead of the original SFileOpenFile
+BOOL WINAPI CMpqFileListerPlugin::HookedSFileOpenFile(
+    LPCSTR lpFileName,
+    HANDLE* hFile)
+{
+    // Call the original function first to see if the file was found
+    BOOL result = FALSE;
+    if (s_OriginalSFileOpenFile)
+        result = s_OriginalSFileOpenFile(lpFileName, hFile);
+
+    // Log the file access
+    if (result && hFile && *hFile)
+        LogFileAccess(lpFileName, *hFile);
+
+    return result;
+}
+
 // The hook function - this is called instead of the original SFileOpenFileEx
 BOOL WINAPI CMpqFileListerPlugin::HookedSFileOpenFileEx(
     HANDLE hMpq,
@@ -168,45 +230,9 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSFileOpenFileEx(
     if (s_OriginalSFileOpenFileEx)
         result = s_OriginalSFileOpenFileEx(hMpq, szFileName, dwSearchScope, phFile);
 
-    // Log the filename and archive
-    if (szFileName && s_logFile.is_open())
-    {
-        std::lock_guard<std::mutex> lock(s_logMutex);
-
-        // Build the log entry: "filename" or "archive.mpq: filename"
-        std::string logEntry = szFileName;
-
-        // Try to get the archive name if the file was found and the option is enabled
-        if (g_printMpqArchive && result && phFile && *phFile && s_SFileGetFileArchive && s_SFileGetArchiveName)
-        {
-            // Get the archive handle from the file handle
-            HANDLE hArchive = nullptr;
-            if (s_SFileGetFileArchive(*phFile, &hArchive) && hArchive)
-            {
-                char archiveName[MAX_PATH] = {0};
-                if (s_SFileGetArchiveName(hArchive, archiveName, MAX_PATH) && archiveName[0])
-                {
-                    // Extract just the filename from the full path
-                    std::filesystem::path archivePath(archiveName);
-                    logEntry = archivePath.filename().string() + ": " + logEntry;
-                }
-            }
-        }
-
-        bool shouldLog = true;
-        if (g_logUniqueOnly)
-        {
-            // Only log if we haven't seen this entry before
-            auto [it, inserted] = s_seenFiles.insert(logEntry);
-            shouldLog = inserted;
-        }
-
-        if (shouldLog)
-        {
-            s_logFile << logEntry << "\n";
-            s_logFile.flush();
-        }
-    }
+    // Log the file access
+    if (result && phFile && *phFile)
+        LogFileAccess(szFileName, *phFile);
 
     return result;
 }
@@ -263,16 +289,19 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
         return TRUE;  // Return TRUE to not abort the patch
     }
 
-    // Get the original function pointer using ordinal
+    // Get the original function pointers using ordinals
     // Use reinterpret_cast via void* to avoid -Wcast-function-type warning
+    s_OriginalSFileOpenFile = reinterpret_cast<SFileOpenFilePtr>(
+        reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)SFILEOPENFILE_ORDINAL)));
+
     s_OriginalSFileOpenFileEx = reinterpret_cast<SFileOpenFileExPtr>(
         reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)SFILEOPENFILEEX_ORDINAL)));
 
-    if (!s_OriginalSFileOpenFileEx)
+    if (!s_OriginalSFileOpenFile && !s_OriginalSFileOpenFileEx)
     {
         if (s_logFile.is_open())
         {
-            s_logFile << "ERROR: SFileOpenFileEx not found in Storm.dll\n";
+            s_logFile << "ERROR: Neither SFileOpenFile nor SFileOpenFileEx found in Storm.dll\n";
         }
         return TRUE;  // Return TRUE to not abort the patch
     }
@@ -283,16 +312,31 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
     s_SFileGetArchiveName = reinterpret_cast<SFileGetArchiveNamePtr>(
         reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)SFILEGETARCHIVENAME_ORDINAL)));
 
-    // Patch the import table to redirect calls to our hook
+    // Patch the import table to redirect calls to our hooks
     // Use reinterpret_cast via void* to avoid -Wcast-function-type warning
     HMODULE hHostProcess = GetModuleHandle(nullptr);
-    PatchImportEntry(
-        hHostProcess,
-        "Storm.dll",
-        reinterpret_cast<FARPROC>(reinterpret_cast<void*>(s_OriginalSFileOpenFileEx)),
-        reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSFileOpenFileEx)),
-        TRUE  // Recursive - patch all loaded modules
-    );
+
+    if (s_OriginalSFileOpenFile)
+    {
+        PatchImportEntry(
+            hHostProcess,
+            "Storm.dll",
+            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(s_OriginalSFileOpenFile)),
+            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSFileOpenFile)),
+            TRUE  // Recursive - patch all loaded modules
+        );
+    }
+
+    if (s_OriginalSFileOpenFileEx)
+    {
+        PatchImportEntry(
+            hHostProcess,
+            "Storm.dll",
+            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(s_OriginalSFileOpenFileEx)),
+            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSFileOpenFileEx)),
+            TRUE  // Recursive - patch all loaded modules
+        );
+    }
 
     m_bInitialized = true;
     return TRUE;

@@ -49,6 +49,7 @@ static const char* RADIO_TIMESTAMP_FILENAME_TEXT = "'<timestamp> <filename>'";
 static const char* RADIO_FILENAME_ONLY_TEXT = "'<filename>'";
 static const char* LOG_FILENAME_GROUPBOX_TEXT = "Log file name";
 static const char* PATH_LABEL_TEXT = "Put filename only (as opposed to full path) to create the file in the game's directory";
+static const char* BROWSE_BUTTON_TEXT = "&Browse...";  // & creates Alt+B accelerator
 static const char* TARGET_GAME_GROUPBOX_TEXT = "Target game";
 static const char* RADIO_DIABLO1_TEXT = "Diablo I";
 static const char* RADIO_LATER_TEXT = "Later games (StarCraft, Diablo II, WarCraft II, etc.)";
@@ -272,7 +273,7 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     // Unique checkbox
     HWND hUniqueCheck = CreateWindowExA(
         0, "BUTTON", UNIQUE_CHECKBOX_TEXT,
-        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
         MARGIN, y, uniqueCheckboxSize.cx + SPACING, uniqueCheckboxSize.cy,
         hDlg, (HMENU)IDC_UNIQUE_CHECKBOX, hModule, nullptr
     );
@@ -310,7 +311,7 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     // Radio button 1: timestamp + archive + filename (first in group)
     HWND hRadio1 = CreateWindowExA(
         0, "BUTTON", RADIO_TIMESTAMP_ARCHIVE_FILENAME_TEXT,
-        WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
         logFormatInnerX, logFormatInnerY, radio1Size.cx + SPACING, radio1Size.cy,
         hDlg, (HMENU)IDC_RADIO_TIMESTAMP_ARCHIVE_FILENAME, hModule, nullptr
     );
@@ -320,7 +321,7 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     // Radio button 2: archive + filename
     HWND hRadio2 = CreateWindowExA(
         0, "BUTTON", RADIO_ARCHIVE_FILENAME_TEXT,
-        WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
         logFormatInnerX, logFormatInnerY, radio2Size.cx + SPACING, radio2Size.cy,
         hDlg, (HMENU)IDC_RADIO_ARCHIVE_FILENAME, hModule, nullptr
     );
@@ -330,7 +331,7 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     // Radio button 3: timestamp + filename
     HWND hRadio3 = CreateWindowExA(
         0, "BUTTON", RADIO_TIMESTAMP_FILENAME_TEXT,
-        WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
         logFormatInnerX, logFormatInnerY, radio3Size.cx + SPACING, radio3Size.cy,
         hDlg, (HMENU)IDC_RADIO_TIMESTAMP_FILENAME, hModule, nullptr
     );
@@ -340,7 +341,7 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     // Radio button 4: filename only
     HWND hRadio4 = CreateWindowExA(
         0, "BUTTON", RADIO_FILENAME_ONLY_TEXT,
-        WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
         logFormatInnerX, logFormatInnerY, radio4Size.cx + SPACING, radio4Size.cy,
         hDlg, (HMENU)IDC_RADIO_FILENAME_ONLY, hModule, nullptr
     );
@@ -397,7 +398,7 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
 
     HWND hEdit = CreateWindowExA(
         WS_EX_CLIENTEDGE, "EDIT", g_logFileName.c_str(),
-        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
         logFilenameInnerX, logFilenameInnerY, editWidth, EDIT_HEIGHT,
         hDlg, (HMENU)IDC_PATH_EDIT, hModule, nullptr
     );
@@ -405,8 +406,8 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
 
     int browseX = logFilenameInnerX + editWidth + SPACING;
     HWND hBrowse = CreateWindowExA(
-        0, "BUTTON", "Browse...",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        0, "BUTTON", BROWSE_BUTTON_TEXT,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         browseX, logFilenameInnerY, browseWidth, EDIT_HEIGHT,
         hDlg, (HMENU)IDC_BROWSE_BUTTON, hModule, nullptr
     );
@@ -431,7 +432,7 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     // Radio button: Diablo 1 (first in target game group)
     HWND hRadioDiablo1 = CreateWindowExA(
         0, "BUTTON", RADIO_DIABLO1_TEXT,
-        WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
         targetGameInnerX, targetGameInnerY, radioDiablo1Size.cx + SPACING, radioDiablo1Size.cy,
         hDlg, (HMENU)IDC_RADIO_DIABLO1, hModule, nullptr
     );
@@ -441,7 +442,7 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     // Radio button: Later games
     HWND hRadioLater = CreateWindowExA(
         0, "BUTTON", RADIO_LATER_TEXT,
-        WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
         targetGameInnerX, targetGameInnerY, radioLaterSize.cx + SPACING, radioLaterSize.cy,
         hDlg, (HMENU)IDC_RADIO_LATER, hModule, nullptr
     );
@@ -461,7 +462,7 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
 
     HWND hOK = CreateWindowExA(
         0, "BUTTON", "OK",
-        WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
         okX, buttonY, okSize.cx * 4, BUTTON_HEIGHT,
         hDlg, (HMENU)IDC_OK_BUTTON, hModule, nullptr
     );
@@ -469,7 +470,7 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
 
     HWND hCancel = CreateWindowExA(
         0, "BUTTON", "Cancel",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         cancelX, buttonY, cancelWidth, BUTTON_HEIGHT,
         hDlg, (HMENU)IDC_CANCEL_BUTTON, hModule, nullptr
     );
@@ -512,13 +513,13 @@ static LRESULT CALLBACK DialogProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
         case WM_COMMAND:
         {
             WORD cmd = LOWORD(wParam);
-            if (cmd == IDC_OK_BUTTON)
+            if (cmd == IDC_OK_BUTTON || cmd == IDOK)
             {
                 HandleOkButton(hDlg);
                 s_dialogRunning = false;
                 return 0;
             }
-            else if (cmd == IDC_CANCEL_BUTTON)
+            else if (cmd == IDC_CANCEL_BUTTON || cmd == IDCANCEL)
             {
                 s_dialogRunning = false;
                 return 0;
@@ -533,13 +534,6 @@ static LRESULT CALLBACK DialogProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM l
         case WM_CLOSE:
             s_dialogRunning = false;
             return 0;
-        case WM_KEYDOWN:
-            if (wParam == VK_ESCAPE)
-            {
-                s_dialogRunning = false;
-                return 0;
-            }
-            break;
     }
     return DefWindowProcA(hDlg, uMsg, wParam, lParam);
 }
@@ -554,8 +548,12 @@ static void RunDialogMessageLoop(HWND hDlg)
         if (!IsWindow(hDlg))
             break;
 
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
+        // Handle dialog messages (Tab navigation, Enter, Escape, etc.)
+        if (!IsDialogMessage(hDlg, &msg))
+        {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
     }
 }
 

@@ -42,17 +42,24 @@ static const char* DESCRIPTION_TEXT =
 
 static const char* UNIQUE_CHECKBOX_TEXT = "Log unique filenames only (no duplicates)";
 static const char* LOG_FORMAT_GROUPBOX_TEXT = "Log format";
-static const char* TIMESTAMP_INFO_TEXT = "Timestamp is in milliseconds since epoch";
+static const char* TIMESTAMP_INFO_TEXT = "Timestamp is in milliseconds since epoch (1970-01-01)";
 static const char* RADIO_TIMESTAMP_ARCHIVE_FILENAME_TEXT = "'<timestamp> <MPQ archive>: <filename>'";
 static const char* RADIO_ARCHIVE_FILENAME_TEXT = "'<MPQ archive>: <filename>'";
 static const char* RADIO_TIMESTAMP_FILENAME_TEXT = "'<timestamp> <filename>'";
 static const char* RADIO_FILENAME_ONLY_TEXT = "'<filename>'";
 static const char* LOG_FILENAME_GROUPBOX_TEXT = "Log file name";
-static const char* PATH_LABEL_TEXT = "Put filename only (as opposed to full path) to create the file in the game's directory";
-static const char* BROWSE_BUTTON_TEXT = "&Browse...";  // & creates Alt+B accelerator
+static const char* PATH_LABEL_TEXT = "Enter filename only (not full path) to create the file in the game's directory";
+static const char* BROWSE_BUTTON_TEXT = "&Browse...";
 static const char* TARGET_GAME_GROUPBOX_TEXT = "Target game";
 static const char* RADIO_DIABLO1_TEXT = "Diablo I";
 static const char* RADIO_LATER_TEXT = "Later games (StarCraft, Diablo II, WarCraft II, etc.)";
+static const char* OK_BUTTON_TEXT = "OK";
+static const char* CANCEL_BUTTON_TEXT = "Cancel";
+static const char* FILE_DIALOG_TITLE = "Select Log File Location";
+static const char* FILE_DIALOG_FILTER = "Text Files (*.txt)\0*.txt\0All Files (*.*)\0*.*\0";
+static const char* FILE_DIALOG_DEFAULT_EXT = "txt";
+static const char* DIALOG_WINDOW_TITLE = PLUGIN_NAME " - Configuration";
+static const char* DIALOG_CLASS_NAME = "MpqFileListerConfigDialog";
 
 // Layout constants
 static constexpr int MARGIN = 25;
@@ -92,12 +99,12 @@ static void HandleBrowseButton(HWND hDlg)
     OPENFILENAMEA ofn = {};
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = hDlg;
-    ofn.lpstrFilter = "Text Files (*.txt)\0*.txt\0All Files (*.*)\0*.*\0";
+    ofn.lpstrFilter = FILE_DIALOG_FILTER;
     ofn.lpstrFile = filename;
     ofn.nMaxFile = MAX_PATH;
-    ofn.lpstrTitle = "Select Log File Location";
+    ofn.lpstrTitle = FILE_DIALOG_TITLE;
     ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST;
-    ofn.lpstrDefExt = "txt";
+    ofn.lpstrDefExt = FILE_DIALOG_DEFAULT_EXT;
 
     if (GetSaveFileNameA(&ofn))
     {
@@ -148,9 +155,9 @@ static void CalculateDialogLayout(HDC hdc)
     SIZE radioDiablo1Size = MeasureText(hdc, RADIO_DIABLO1_TEXT);
     SIZE radioLaterSize = MeasureText(hdc, RADIO_LATER_TEXT);
     SIZE labelSize = MeasureText(hdc, PATH_LABEL_TEXT);
-    SIZE browseSize = MeasureText(hdc, "Browse...");
-    SIZE okSize = MeasureText(hdc, "OK");
-    SIZE cancelSize = MeasureText(hdc, "Cancel");
+    SIZE browseSize = MeasureText(hdc, BROWSE_BUTTON_TEXT);
+    SIZE okSize = MeasureText(hdc, OK_BUTTON_TEXT);
+    SIZE cancelSize = MeasureText(hdc, CANCEL_BUTTON_TEXT);
 
     // Add padding for checkbox/radio buttons (button circle/square + spacing)
     uniqueCheckboxSize.cx += 20;
@@ -187,7 +194,7 @@ static void CalculateDialogLayout(HDC hdc)
     if (radioLaterSize.cx > contentWidth) contentWidth = radioLaterSize.cx;
     if (labelSize.cx > contentWidth) contentWidth = labelSize.cx;
 
-    g_dlgWidth = contentWidth + (MARGIN * 2);
+    g_dlgWidth = contentWidth + (MARGIN * 3);
     if (g_dlgWidth < MIN_DLG_WIDTH) g_dlgWidth = MIN_DLG_WIDTH;
 
     // Calculate required height
@@ -247,11 +254,11 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     radioLaterSize.cy += 4;
     SIZE timestampInfoSize = MeasureText(hdc, TIMESTAMP_INFO_TEXT);
     SIZE labelSize = MeasureText(hdc, PATH_LABEL_TEXT);
-    SIZE browseSize = MeasureText(hdc, "Browse...");
+    SIZE browseSize = MeasureText(hdc, BROWSE_BUTTON_TEXT);
     browseSize.cx += 16;
-    SIZE okSize = MeasureText(hdc, "OK");
+    SIZE okSize = MeasureText(hdc, OK_BUTTON_TEXT);
     okSize.cx += 24;
-    SIZE cancelSize = MeasureText(hdc, "Cancel");
+    SIZE cancelSize = MeasureText(hdc, CANCEL_BUTTON_TEXT);
     cancelSize.cx += 24;
 
     SelectObject(hdc, hOldFont);
@@ -380,7 +387,7 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
 
     // Controls inside the log file name group box
     int logFilenameInnerY = y + 35;  // Offset for group box title
-    int logFilenameInnerX = MARGIN + 10;  // Indent inside group box
+    int logFilenameInnerX = MARGIN + 20;  // Indent inside group box
 
     // Path label
     HWND hLabel = CreateWindowExA(
@@ -404,7 +411,7 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     );
     SendMessage(hEdit, WM_SETFONT, (WPARAM)hFont, TRUE);
 
-    int browseX = logFilenameInnerX + editWidth + SPACING;
+    int browseX = logFilenameInnerX + editWidth;
     HWND hBrowse = CreateWindowExA(
         0, "BUTTON", BROWSE_BUTTON_TEXT,
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
@@ -461,7 +468,7 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     int okX = cancelX - SPACING - okSize.cx * 4;
 
     HWND hOK = CreateWindowExA(
-        0, "BUTTON", "OK",
+        0, "BUTTON", OK_BUTTON_TEXT,
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
         okX, buttonY, okSize.cx * 4, BUTTON_HEIGHT,
         hDlg, (HMENU)IDC_OK_BUTTON, hModule, nullptr
@@ -469,7 +476,7 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     SendMessage(hOK, WM_SETFONT, (WPARAM)hFont, TRUE);
 
     HWND hCancel = CreateWindowExA(
-        0, "BUTTON", "Cancel",
+        0, "BUTTON", CANCEL_BUTTON_TEXT,
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
         cancelX, buttonY, cancelWidth, BUTTON_HEIGHT,
         hDlg, (HMENU)IDC_CANCEL_BUTTON, hModule, nullptr
@@ -557,8 +564,6 @@ static void RunDialogMessageLoop(HWND hDlg)
     }
 }
 
-static const char* DIALOG_CLASS_NAME = "MpqFileListerConfigDialog";
-
 static void RegisterDialogClass(HMODULE hModule)
 {
     static bool registered = false;
@@ -586,7 +591,7 @@ void ShowConfigDialog(HWND hParentWnd, HMODULE hModule)
     HWND hDlg = CreateWindowExA(
         WS_EX_DLGMODALFRAME | WS_EX_TOPMOST,
         DIALOG_CLASS_NAME,
-        "MPQFileLister - Configuration",
+        DIALOG_WINDOW_TITLE,
         WS_POPUP | WS_CAPTION | WS_SYSMENU,  // Not visible initially
         CW_USEDEFAULT, CW_USEDEFAULT,
         500, 500,  // Temporary size (will be resized)

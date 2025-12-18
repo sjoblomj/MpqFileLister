@@ -9,8 +9,18 @@
 #include <string>
 
 // === Configuration variables ===
+
+// Log format options
+enum class LogFormat
+{
+    TIMESTAMP_ARCHIVE_FILENAME = 0,   // Print '<timestamp> <MPQ archive>: <filename>'
+    ARCHIVE_FILENAME = 1,             // Print '<MPQ archive>: <filename>'
+    TIMESTAMP_FILENAME = 2,           // Print '<timestamp> <filename>'
+    FILENAME_ONLY = 3                 // Print '<filename>'
+};
+
 extern bool g_logUniqueOnly;
-extern bool g_printMpqArchive;
+extern LogFormat g_logFormat;
 extern std::string g_logFileName;
 
 // === Configuration functions ===

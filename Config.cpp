@@ -8,7 +8,7 @@
 
 // === Configuration variables ===
 bool g_logUniqueOnly = true;
-bool g_printMpqArchive = false;
+LogFormat g_logFormat = LogFormat::FILENAME_ONLY;
 std::string g_logFileName = "MpqFileLister_FileLog.txt";
 
 // Path to the config file (next to the plugin DLL)
@@ -42,9 +42,11 @@ void LoadConfig()
         {
             g_logUniqueOnly = (line.substr(14) == "1");
         }
-        else if (line.rfind("PrintMpqArchive=", 0) == 0)
+        else if (line.rfind("LogFormat=", 0) == 0)
         {
-            g_printMpqArchive = (line.substr(16) == "1");
+            int formatValue = std::stoi(line.substr(10));
+            if (formatValue >= 0 && formatValue <= 3)
+                g_logFormat = static_cast<LogFormat>(formatValue);
         }
         else if (line.rfind("LogFileName=", 0) == 0)
         {
@@ -63,6 +65,6 @@ void SaveConfig()
         return;
 
     file << "LogUniqueOnly=" << (g_logUniqueOnly ? "1" : "0") << "\n";
-    file << "PrintMpqArchive=" << (g_printMpqArchive ? "1" : "0") << "\n";
+    file << "LogFormat=" << static_cast<int>(g_logFormat) << "\n";
     file << "LogFileName=" << g_logFileName << "\n";
 }

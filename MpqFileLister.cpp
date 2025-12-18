@@ -10,6 +10,9 @@
 #include <filesystem>
 #include <cstring>
 #include <unordered_set>
+#include <chrono>
+#include <sstream>
+#include <iomanip>
 
 // Storm.dll ordinals
 static constexpr uint32_t SFILEOPENFILE_ORDINAL       = 0x10B;   // 267
@@ -158,6 +161,14 @@ BOOL WINAPI CMpqFileListerPlugin::GetModules(void* lpPluginModules, DWORD* lpnNu
     return TRUE;
 }
 
+// Helper function to get Unix epoch timestamp in milliseconds
+static std::string GetTimestampMs()
+{
+    auto now = std::chrono::system_clock::now();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    return std::to_string(ms);
+}
+
 // Helper function to log file access (shared by both hook functions)
 void CMpqFileListerPlugin::LogFileAccess(const char* fileName, HANDLE fileHandle)
 {
@@ -166,39 +177,76 @@ void CMpqFileListerPlugin::LogFileAccess(const char* fileName, HANDLE fileHandle
 
     std::lock_guard<std::mutex> lock(s_logMutex);
 
-    // Build the log entry: "filename" or "archive.mpq: filename"
-    std::string logEntry = fileName;
+    // Build the log entry based on the selected format
+    std::string logEntry;
+    std::string archiveName;
 
-    // Try to get the archive name if the file was found and the option is enabled
-    if (g_printMpqArchive && fileHandle && s_SFileGetFileArchive && s_SFileGetArchiveName)
+    // Get archive name if needed for the format
+    bool needArchive = (g_logFormat == LogFormat::TIMESTAMP_ARCHIVE_FILENAME ||
+                        g_logFormat == LogFormat::ARCHIVE_FILENAME);
+
+    if (needArchive && fileHandle && s_SFileGetFileArchive && s_SFileGetArchiveName)
     {
-        // Get the archive handle from the file handle
         HANDLE hArchive = nullptr;
         if (s_SFileGetFileArchive(fileHandle, &hArchive) && hArchive)
         {
-            char archiveName[MAX_PATH] = {0};
-            if (s_SFileGetArchiveName(hArchive, archiveName, MAX_PATH) && archiveName[0])
+            char archiveNameBuf[MAX_PATH] = {0};
+            if (s_SFileGetArchiveName(hArchive, archiveNameBuf, MAX_PATH) && archiveNameBuf[0])
             {
                 // Extract just the filename from the full path
-                std::filesystem::path archivePath(archiveName);
-                logEntry = archivePath.filename().string() + ": " + logEntry;
+                std::filesystem::path archivePath(archiveNameBuf);
+                archiveName = archivePath.filename().string();
             }
         }
     }
 
+    // Build the uniqueness key (without timestamp) for duplicate detection
+    std::string uniqueKey;
+    if (!archiveName.empty())
+        uniqueKey = archiveName + ": " + fileName;
+    else
+        uniqueKey = fileName;
+
+    // Check if we should log this entry
     bool shouldLog = true;
     if (g_logUniqueOnly)
     {
-        // Only log if we haven't seen this entry before
-        auto [it, inserted] = s_seenFiles.insert(logEntry);
+        // Only log if we haven't seen this entry before (based on uniqueKey, not timestamp)
+        auto [it, inserted] = s_seenFiles.insert(uniqueKey);
         shouldLog = inserted;
     }
 
-    if (shouldLog)
+    if (!shouldLog)
+        return;
+
+    // Build the log entry according to the selected format
+    switch (g_logFormat)
     {
-        s_logFile << logEntry << "\n";
-        s_logFile.flush();
+        case LogFormat::TIMESTAMP_ARCHIVE_FILENAME:
+            logEntry = GetTimestampMs() + " ";
+            if (!archiveName.empty())
+                logEntry += archiveName + ": ";
+            logEntry += fileName;
+            break;
+
+        case LogFormat::ARCHIVE_FILENAME:
+            if (!archiveName.empty())
+                logEntry = archiveName + ": " + fileName;
+            else
+                logEntry = fileName;
+            break;
+
+        case LogFormat::TIMESTAMP_FILENAME:
+            logEntry = GetTimestampMs() + " " + fileName;
+            break;
+
+        case LogFormat::FILENAME_ONLY:
+            logEntry = fileName;
+            break;
     }
+
+    s_logFile << logEntry << "\n";
+    s_logFile.flush();
 }
 
 // The hook function - this is called instead of the original SFileOpenFile

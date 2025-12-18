@@ -11,11 +11,13 @@
 // Dialog control IDs
 static constexpr int IDC_DESCRIPTION = 101;
 static constexpr int IDC_UNIQUE_CHECKBOX = 102;
-static constexpr int IDC_RADIO_WITH_ARCHIVE = 103;
-static constexpr int IDC_RADIO_WITHOUT_ARCHIVE = 104;
-static constexpr int IDC_PATH_LABEL = 105;
-static constexpr int IDC_PATH_EDIT = 106;
-static constexpr int IDC_BROWSE_BUTTON = 107;
+static constexpr int IDC_RADIO_TIMESTAMP_ARCHIVE_FILENAME = 103;
+static constexpr int IDC_RADIO_ARCHIVE_FILENAME = 104;
+static constexpr int IDC_RADIO_TIMESTAMP_FILENAME = 105;
+static constexpr int IDC_RADIO_FILENAME_ONLY = 106;
+static constexpr int IDC_PATH_LABEL = 107;
+static constexpr int IDC_PATH_EDIT = 108;
+static constexpr int IDC_BROWSE_BUTTON = 109;
 static constexpr int IDC_OK_BUTTON = IDOK;
 static constexpr int IDC_CANCEL_BUTTON = IDCANCEL;
 
@@ -33,8 +35,10 @@ static const char* DESCRIPTION_TEXT =
     "\r\n\r\n";
 
 static const char* UNIQUE_CHECKBOX_TEXT = "Log unique filenames only (no duplicates)";
-static const char* RADIO_WITH_ARCHIVE_TEXT = "Print '<MPQ archive>: <filename>'";
-static const char* RADIO_WITHOUT_ARCHIVE_TEXT = "Print '<filename>'";
+static const char* RADIO_TIMESTAMP_ARCHIVE_FILENAME_TEXT = "Print '<timestamp> <MPQ archive>: <filename>'";
+static const char* RADIO_ARCHIVE_FILENAME_TEXT = "Print '<MPQ archive>: <filename>'";
+static const char* RADIO_TIMESTAMP_FILENAME_TEXT = "Print '<timestamp> <filename>'";
+static const char* RADIO_FILENAME_ONLY_TEXT = "Print '<filename>'";
 static const char* PATH_LABEL_TEXT = "Log file name (filename only to log to the game's directory):";
 
 // Layout constants
@@ -94,7 +98,14 @@ static void HandleOkButton(HWND hDlg)
     g_logUniqueOnly = (IsDlgButtonChecked(hDlg, IDC_UNIQUE_CHECKBOX) == BST_CHECKED);
 
     // Save radio button state
-    g_printMpqArchive = (IsDlgButtonChecked(hDlg, IDC_RADIO_WITH_ARCHIVE) == BST_CHECKED);
+    if (IsDlgButtonChecked(hDlg, IDC_RADIO_TIMESTAMP_ARCHIVE_FILENAME) == BST_CHECKED)
+        g_logFormat = LogFormat::TIMESTAMP_ARCHIVE_FILENAME;
+    else if (IsDlgButtonChecked(hDlg, IDC_RADIO_ARCHIVE_FILENAME) == BST_CHECKED)
+        g_logFormat = LogFormat::ARCHIVE_FILENAME;
+    else if (IsDlgButtonChecked(hDlg, IDC_RADIO_TIMESTAMP_FILENAME) == BST_CHECKED)
+        g_logFormat = LogFormat::TIMESTAMP_FILENAME;
+    else if (IsDlgButtonChecked(hDlg, IDC_RADIO_FILENAME_ONLY) == BST_CHECKED)
+        g_logFormat = LogFormat::FILENAME_ONLY;
 
     // Save path
     char path[MAX_PATH];
@@ -110,8 +121,10 @@ static void CalculateDialogLayout(HDC hdc)
     // Measure all text elements to determine required sizes
     SIZE descSize = MeasureText(hdc, DESCRIPTION_TEXT, 400);
     SIZE uniqueCheckboxSize = MeasureText(hdc, UNIQUE_CHECKBOX_TEXT);
-    SIZE radioWithArchiveSize = MeasureText(hdc, RADIO_WITH_ARCHIVE_TEXT);
-    SIZE radioWithoutArchiveSize = MeasureText(hdc, RADIO_WITHOUT_ARCHIVE_TEXT);
+    SIZE radio1Size = MeasureText(hdc, RADIO_TIMESTAMP_ARCHIVE_FILENAME_TEXT);
+    SIZE radio2Size = MeasureText(hdc, RADIO_ARCHIVE_FILENAME_TEXT);
+    SIZE radio3Size = MeasureText(hdc, RADIO_TIMESTAMP_FILENAME_TEXT);
+    SIZE radio4Size = MeasureText(hdc, RADIO_FILENAME_ONLY_TEXT);
     SIZE labelSize = MeasureText(hdc, PATH_LABEL_TEXT);
     SIZE browseSize = MeasureText(hdc, "Browse...");
     SIZE okSize = MeasureText(hdc, "OK");
@@ -120,10 +133,14 @@ static void CalculateDialogLayout(HDC hdc)
     // Add padding for checkbox/radio buttons (button circle/square + spacing)
     uniqueCheckboxSize.cx += 20;
     uniqueCheckboxSize.cy += 4;
-    radioWithArchiveSize.cx += 20;
-    radioWithArchiveSize.cy += 4;
-    radioWithoutArchiveSize.cx += 20;
-    radioWithoutArchiveSize.cy += 4;
+    radio1Size.cx += 20;
+    radio1Size.cy += 4;
+    radio2Size.cx += 20;
+    radio2Size.cy += 4;
+    radio3Size.cx += 20;
+    radio3Size.cy += 4;
+    radio4Size.cx += 20;
+    radio4Size.cy += 4;
 
     // Add padding for buttons
     browseSize.cx += 16;
@@ -136,8 +153,10 @@ static void CalculateDialogLayout(HDC hdc)
     // Calculate required width (widest element + margins)
     int contentWidth = descSize.cx;
     if (uniqueCheckboxSize.cx > contentWidth) contentWidth = uniqueCheckboxSize.cx;
-    if (radioWithArchiveSize.cx > contentWidth) contentWidth = radioWithArchiveSize.cx;
-    if (radioWithoutArchiveSize.cx > contentWidth) contentWidth = radioWithoutArchiveSize.cx;
+    if (radio1Size.cx > contentWidth) contentWidth = radio1Size.cx;
+    if (radio2Size.cx > contentWidth) contentWidth = radio2Size.cx;
+    if (radio3Size.cx > contentWidth) contentWidth = radio3Size.cx;
+    if (radio4Size.cx > contentWidth) contentWidth = radio4Size.cx;
     if (labelSize.cx > contentWidth) contentWidth = labelSize.cx;
 
     g_dlgWidth = contentWidth + (MARGIN * 2);
@@ -147,8 +166,10 @@ static void CalculateDialogLayout(HDC hdc)
     int y = MARGIN;
     y += descSize.cy + SPACING;                    // Description
     y += uniqueCheckboxSize.cy + SPACING;          // Unique checkbox
-    y += radioWithArchiveSize.cy + SMALL_SPACING;  // Radio: with archive
-    y += radioWithoutArchiveSize.cy + SPACING;     // Radio: without archive
+    y += radio1Size.cy + SMALL_SPACING;            // Radio 1
+    y += radio2Size.cy + SMALL_SPACING;            // Radio 2
+    y += radio3Size.cy + SMALL_SPACING;            // Radio 3
+    y += radio4Size.cy + SPACING;                  // Radio 4
     y += labelSize.cy + SPACING;                   // Path label
     y += EDIT_HEIGHT + SPACING;                    // Edit + Browse row
     y += SPACING;                                  // Extra spacing before buttons
@@ -173,12 +194,18 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     SIZE uniqueCheckboxSize = MeasureText(hdc, UNIQUE_CHECKBOX_TEXT);
     uniqueCheckboxSize.cx += 20;
     uniqueCheckboxSize.cy += 4;
-    SIZE radioWithArchiveSize = MeasureText(hdc, RADIO_WITH_ARCHIVE_TEXT);
-    radioWithArchiveSize.cx += 20;
-    radioWithArchiveSize.cy += 4;
-    SIZE radioWithoutArchiveSize = MeasureText(hdc, RADIO_WITHOUT_ARCHIVE_TEXT);
-    radioWithoutArchiveSize.cx += 20;
-    radioWithoutArchiveSize.cy += 4;
+    SIZE radio1Size = MeasureText(hdc, RADIO_TIMESTAMP_ARCHIVE_FILENAME_TEXT);
+    radio1Size.cx += 20;
+    radio1Size.cy += 4;
+    SIZE radio2Size = MeasureText(hdc, RADIO_ARCHIVE_FILENAME_TEXT);
+    radio2Size.cx += 20;
+    radio2Size.cy += 4;
+    SIZE radio3Size = MeasureText(hdc, RADIO_TIMESTAMP_FILENAME_TEXT);
+    radio3Size.cx += 20;
+    radio3Size.cy += 4;
+    SIZE radio4Size = MeasureText(hdc, RADIO_FILENAME_ONLY_TEXT);
+    radio4Size.cx += 20;
+    radio4Size.cy += 4;
     SIZE labelSize = MeasureText(hdc, PATH_LABEL_TEXT);
     SIZE browseSize = MeasureText(hdc, "Browse...");
     browseSize.cx += 16;
@@ -214,28 +241,64 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
     CheckDlgButton(hDlg, IDC_UNIQUE_CHECKBOX, g_logUniqueOnly ? BST_CHECKED : BST_UNCHECKED);
     y += uniqueCheckboxSize.cy + SPACING;
 
-    // Radio button: with archive (first in group)
-    HWND hRadioWithArchive = CreateWindowExA(
-        0, "BUTTON", RADIO_WITH_ARCHIVE_TEXT,
+    // Radio button 1: timestamp + archive + filename (first in group)
+    HWND hRadio1 = CreateWindowExA(
+        0, "BUTTON", RADIO_TIMESTAMP_ARCHIVE_FILENAME_TEXT,
         WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON | WS_GROUP,
-        MARGIN, y, radioWithArchiveSize.cx + SPACING, radioWithArchiveSize.cy,
-        hDlg, (HMENU)IDC_RADIO_WITH_ARCHIVE, hModule, nullptr
+        MARGIN, y, radio1Size.cx + SPACING, radio1Size.cy,
+        hDlg, (HMENU)IDC_RADIO_TIMESTAMP_ARCHIVE_FILENAME, hModule, nullptr
     );
-    SendMessage(hRadioWithArchive, WM_SETFONT, (WPARAM)hFont, TRUE);
-    y += radioWithArchiveSize.cy + SMALL_SPACING;
+    SendMessage(hRadio1, WM_SETFONT, (WPARAM)hFont, TRUE);
+    y += radio1Size.cy + SMALL_SPACING;
 
-    // Radio button: without archive
-    HWND hRadioWithoutArchive = CreateWindowExA(
-        0, "BUTTON", RADIO_WITHOUT_ARCHIVE_TEXT,
+    // Radio button 2: archive + filename
+    HWND hRadio2 = CreateWindowExA(
+        0, "BUTTON", RADIO_ARCHIVE_FILENAME_TEXT,
         WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
-        MARGIN, y, radioWithoutArchiveSize.cx + SPACING, radioWithoutArchiveSize.cy,
-        hDlg, (HMENU)IDC_RADIO_WITHOUT_ARCHIVE, hModule, nullptr
+        MARGIN, y, radio2Size.cx + SPACING, radio2Size.cy,
+        hDlg, (HMENU)IDC_RADIO_ARCHIVE_FILENAME, hModule, nullptr
     );
-    SendMessage(hRadioWithoutArchive, WM_SETFONT, (WPARAM)hFont, TRUE);
-    y += radioWithoutArchiveSize.cy + SPACING;
+    SendMessage(hRadio2, WM_SETFONT, (WPARAM)hFont, TRUE);
+    y += radio2Size.cy + SMALL_SPACING;
 
-    // Set initial radio button selection
-    CheckDlgButton(hDlg, g_printMpqArchive ? IDC_RADIO_WITH_ARCHIVE : IDC_RADIO_WITHOUT_ARCHIVE, BST_CHECKED);
+    // Radio button 3: timestamp + filename
+    HWND hRadio3 = CreateWindowExA(
+        0, "BUTTON", RADIO_TIMESTAMP_FILENAME_TEXT,
+        WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+        MARGIN, y, radio3Size.cx + SPACING, radio3Size.cy,
+        hDlg, (HMENU)IDC_RADIO_TIMESTAMP_FILENAME, hModule, nullptr
+    );
+    SendMessage(hRadio3, WM_SETFONT, (WPARAM)hFont, TRUE);
+    y += radio3Size.cy + SMALL_SPACING;
+
+    // Radio button 4: filename only
+    HWND hRadio4 = CreateWindowExA(
+        0, "BUTTON", RADIO_FILENAME_ONLY_TEXT,
+        WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON,
+        MARGIN, y, radio4Size.cx + SPACING, radio4Size.cy,
+        hDlg, (HMENU)IDC_RADIO_FILENAME_ONLY, hModule, nullptr
+    );
+    SendMessage(hRadio4, WM_SETFONT, (WPARAM)hFont, TRUE);
+    y += radio4Size.cy + SPACING;
+
+    // Set initial radio button selection based on g_logFormat
+    int selectedRadio = IDC_RADIO_FILENAME_ONLY;
+    switch (g_logFormat)
+    {
+        case LogFormat::TIMESTAMP_ARCHIVE_FILENAME:
+            selectedRadio = IDC_RADIO_TIMESTAMP_ARCHIVE_FILENAME;
+            break;
+        case LogFormat::ARCHIVE_FILENAME:
+            selectedRadio = IDC_RADIO_ARCHIVE_FILENAME;
+            break;
+        case LogFormat::TIMESTAMP_FILENAME:
+            selectedRadio = IDC_RADIO_TIMESTAMP_FILENAME;
+            break;
+        case LogFormat::FILENAME_ONLY:
+            selectedRadio = IDC_RADIO_FILENAME_ONLY;
+            break;
+    }
+    CheckDlgButton(hDlg, selectedRadio, BST_CHECKED);
 
     // Path label
     HWND hLabel = CreateWindowExA(

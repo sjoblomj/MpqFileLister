@@ -15,10 +15,14 @@
 #include <iomanip>
 
 // Storm.dll ordinals
-static constexpr uint32_t SFILEOPENFILE_ORDINAL       = 0x10B;   // 267
-static constexpr uint32_t SFILEOPENFILEEX_ORDINAL     = 0x10C;   // 268
-static constexpr uint32_t SFILEGETFILEARCHIVE_ORDINAL = 0x108;   // 264
-static constexpr uint32_t SFILEGETARCHIVENAME_ORDINAL = 0x113;   // 275
+static constexpr uint32_t SFILEOPENFILE_D1_ORDINAL       = 0x4E;    // 78
+static constexpr uint32_t SFILEOPENFILEEX_D1_ORDINAL     = 0x4F;    // 79
+static constexpr uint32_t SFILEGETFILEARCHIVE_D1_ORDINAL = 0x4B;    // 75
+static constexpr uint32_t SFILEGETARCHIVENAME_D1_ORDINAL = 0x56;    // 86
+static constexpr uint32_t SFILEOPENFILE_ORDINAL          = 0x10B;   // 267
+static constexpr uint32_t SFILEOPENFILEEX_ORDINAL        = 0x10C;   // 268
+static constexpr uint32_t SFILEGETFILEARCHIVE_ORDINAL    = 0x108;   // 264
+static constexpr uint32_t SFILEGETARCHIVENAME_ORDINAL    = 0x113;   // 275
 
 // Function pointer types for archive name lookup
 // BOOL SFileGetFileArchive(HANDLE hFile, HANDLE* phArchive)
@@ -337,13 +341,34 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
         return TRUE;  // Return TRUE to not abort the patch
     }
 
+    // Select ordinals based on target game
+    uint32_t sFileOpenFileOrdinal;
+    uint32_t sFileOpenFileExOrdinal;
+    uint32_t sFileGetFileArchiveOrdinal;
+    uint32_t sFileGetArchiveNameOrdinal;
+
+    if (g_targetGame == TargetGame::DIABLO_1)
+    {
+        sFileOpenFileOrdinal = SFILEOPENFILE_D1_ORDINAL;
+        sFileOpenFileExOrdinal = SFILEOPENFILEEX_D1_ORDINAL;
+        sFileGetFileArchiveOrdinal = SFILEGETFILEARCHIVE_D1_ORDINAL;
+        sFileGetArchiveNameOrdinal = SFILEGETARCHIVENAME_D1_ORDINAL;
+    }
+    else // TargetGame::LATER
+    {
+        sFileOpenFileOrdinal = SFILEOPENFILE_ORDINAL;
+        sFileOpenFileExOrdinal = SFILEOPENFILEEX_ORDINAL;
+        sFileGetFileArchiveOrdinal = SFILEGETFILEARCHIVE_ORDINAL;
+        sFileGetArchiveNameOrdinal = SFILEGETARCHIVENAME_ORDINAL;
+    }
+
     // Get the original function pointers using ordinals
     // Use reinterpret_cast via void* to avoid -Wcast-function-type warning
     s_OriginalSFileOpenFile = reinterpret_cast<SFileOpenFilePtr>(
-        reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)SFILEOPENFILE_ORDINAL)));
+        reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)sFileOpenFileOrdinal)));
 
     s_OriginalSFileOpenFileEx = reinterpret_cast<SFileOpenFileExPtr>(
-        reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)SFILEOPENFILEEX_ORDINAL)));
+        reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)sFileOpenFileExOrdinal)));
 
     if (!s_OriginalSFileOpenFile && !s_OriginalSFileOpenFileEx)
     {
@@ -356,9 +381,9 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
 
     // Get SFileGetFileArchive and SFileGetArchiveName for logging which MPQ files come from (optional)
     s_SFileGetFileArchive = reinterpret_cast<SFileGetFileArchivePtr>(
-        reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)SFILEGETFILEARCHIVE_ORDINAL)));
+        reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)sFileGetFileArchiveOrdinal)));
     s_SFileGetArchiveName = reinterpret_cast<SFileGetArchiveNamePtr>(
-        reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)SFILEGETARCHIVENAME_ORDINAL)));
+        reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)sFileGetArchiveNameOrdinal)));
 
     // Patch the import table to redirect calls to our hooks
     // Use reinterpret_cast via void* to avoid -Wcast-function-type warning

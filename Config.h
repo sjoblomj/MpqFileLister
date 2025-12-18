@@ -19,8 +19,16 @@ enum class LogFormat
     FILENAME_ONLY = 3                 // Print '<filename>'
 };
 
+// Target game options (determines which Storm.dll ordinals to use)
+enum class TargetGame
+{
+    DIABLO_1 = 0,  // Diablo I (uses different ordinals)
+    LATER = 1      // StarCraft, Diablo II, Warcraft II, etc.
+};
+
 extern bool g_logUniqueOnly;
 extern LogFormat g_logFormat;
+extern TargetGame g_targetGame;
 extern std::string g_logFileName;
 
 // === Configuration functions ===

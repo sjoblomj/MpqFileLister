@@ -9,6 +9,7 @@
 // === Configuration variables ===
 bool g_logUniqueOnly = true;
 LogFormat g_logFormat = LogFormat::FILENAME_ONLY;
+TargetGame g_targetGame = TargetGame::LATER;
 std::string g_logFileName = "MpqFileLister_FileLog.txt";
 
 // Path to the config file (next to the plugin DLL)
@@ -48,6 +49,12 @@ void LoadConfig()
             if (formatValue >= 0 && formatValue <= 3)
                 g_logFormat = static_cast<LogFormat>(formatValue);
         }
+        else if (line.rfind("TargetGame=", 0) == 0)
+        {
+            int gameValue = std::stoi(line.substr(11));
+            if (gameValue >= 0 && gameValue <= 1)
+                g_targetGame = static_cast<TargetGame>(gameValue);
+        }
         else if (line.rfind("LogFileName=", 0) == 0)
         {
             g_logFileName = line.substr(12);
@@ -66,5 +73,6 @@ void SaveConfig()
 
     file << "LogUniqueOnly=" << (g_logUniqueOnly ? "1" : "0") << "\n";
     file << "LogFormat=" << static_cast<int>(g_logFormat) << "\n";
+    file << "TargetGame=" << static_cast<int>(g_targetGame) << "\n";
     file << "LogFileName=" << g_logFileName << "\n";
 }

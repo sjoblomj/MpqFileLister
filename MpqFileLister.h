@@ -18,7 +18,7 @@
 constexpr uint32_t PLUGIN_ID = 0x4d51464c;  // "MQFL" in hex
 
 // Plugin name - defined as macro to allow string literal concatenation
-#define PLUGIN_NAME "MPQFileLister v1.0"
+#define PLUGIN_NAME "MpqFileLister v1.1"
 
 // Forward declaration of the interface
 struct IMPQDraftPlugin;

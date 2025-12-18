@@ -1,4 +1,4 @@
-# MPQ File Lister
+# MpqFileLister
 
 An [MPQDraft](https://github.com/sjoblomj/MPQDraft) plugin that logs all file access attempts made through Storm.dll's `SFileOpenFile` and `SFileOpenFileEx` functions.
 

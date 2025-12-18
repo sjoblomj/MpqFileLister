@@ -2,7 +2,7 @@
 # This plugin logs all SFileOpenFile and SFileOpenFileEx calls to a file
 
 cmake_minimum_required(VERSION 3.15)
-project(MpqFileLister VERSION 1.0 LANGUAGES CXX)
+project(MpqFileLister VERSION 1.1 LANGUAGES CXX)
 
 # This is a Windows-only plugin
 if(NOT WIN32)

@@ -23,8 +23,9 @@ This is useful for:
 Click "Configure" in MPQDraft to open the settings dialog:
 
 - **Log unique filenames only**: When enabled, each filename is logged only once (no duplicates). When disabled, every access is logged, even repeated ones.
-- **Print '<MPQ archive>: <filename>' / Print '<filename>'**: Decides whether to log just the filename or include the MPQ archive name as well.
+- **Log format**: Decides the logging format. Choose whether to log timestamp (in milliseconds since epoch, 1970-01-07), the name of the archive and the file name.
 - **Log file name**: The name of the log file. If you enter just a filename (e.g., `FileLog.txt`), it will be created in the game's directory. You can also specify an absolute path.
+- **Target game**: Whether to target Diablo I, or later games.
 
 Settings are saved to `MpqFileLister.ini` next to the plugin.
 
@@ -33,10 +34,16 @@ Settings are saved to `MpqFileLister.ini` next to the plugin.
 The log file contains one filename per line:
 
 ```
-rez\glucurs.bin
-dlgs\popup640.grp
-glue\title\title.pcx
-arr\tfontgam.pcx
+Broodat.mpq: unit\protoss\lshield.los
+patch_rt.mpq: scripts\iscript.bin
+Broodat.mpq: arr\sprites.dat
+patch_rt.mpq: rez\stat_txt.tbl
+patch_rt.mpq: scripts\aiscript.bin
+patch_rt.mpq: arr\units.dat
+patch_rt.mpq: arr\flingy.dat
+patch_rt.mpq: arr\weapons.dat
+patch_rt.mpq: unit\cmdbtns\cmdicons.grp
+Stardat.mpq: tileset\badlands-nc.wpe
 ...
 ```
 

@@ -14,7 +14,7 @@
 #include <mutex>
 #include <string>
 
-// Unique plugin ID - randomly generated
+// Unique plugin ID
 constexpr uint32_t PLUGIN_ID = 0x4d51464c;  // "MQFL" in hex
 
 // Plugin name - defined as macro to allow string literal concatenation
@@ -24,14 +24,14 @@ constexpr uint32_t PLUGIN_ID = 0x4d51464c;  // "MQFL" in hex
 struct IMPQDraftPlugin;
 struct IMPQDraftServer;
 
-// Storm function signatures
-// SFileOpenFile (ordinal 0x10B)
+/* Storm function signatures */
+// SFileOpenFile
 typedef BOOL (WINAPI *SFileOpenFilePtr)(
     LPCSTR lpFileName,
     HANDLE* hFile
 );
 
-// SFileOpenFileEx (ordinal 0x10C)
+// SFileOpenFileEx
 typedef BOOL (WINAPI *SFileOpenFileExPtr)(
     HANDLE hMpq,
     const char* szFileName,

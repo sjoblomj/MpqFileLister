@@ -43,4 +43,3 @@ void LoadConfig();
 void SaveConfig();
 
 #endif // CONFIG_H
-

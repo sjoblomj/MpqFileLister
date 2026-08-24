@@ -13,4 +13,3 @@
 void ShowConfigDialog(HWND hParentWnd, HMODULE hModule);
 
 #endif // CONFIGDIALOG_H
-

@@ -1,8 +1,10 @@
 /*
-    MpqFileLister - An MPQDraft plugin that logs all SFileOpenFile and SFileOpenFileEx calls
+    MpqFileLister - An MPQDraft plugin that logs all SFileOpenFile,
+    SFileOpenFileEx and SVidPlayBegin calls
 
-    This plugin hooks the Storm.dll SFileOpenFile and SFileOpenFileEx functions
-    and logs every filename that the game attempts to open from MPQ archives.
+    This plugin hooks the Storm.dll SFileOpenFile, SFileOpenFileEx and
+    SVidPlayBegin functions and logs every filename that the game attempts to
+    open from MPQ archives.
 */
 
 #ifndef MPQFILELISTER_H
@@ -39,6 +41,17 @@ typedef BOOL (WINAPI *SFileOpenFileExPtr)(
     HANDLE* phFile
 );
 
+// SVidPlayBegin
+typedef BOOL (WINAPI *SVidPlayBeginPtr)(
+    char *filename,
+    int a2,
+    int* a3,
+    int* a4,
+    int* a5,
+    int flags,
+    HANDLE* video
+);
+
 // The plugin class
 class CMpqFileListerPlugin
 {
@@ -50,6 +63,7 @@ private:
     // Original function pointers (static for use in static hook functions)
     static SFileOpenFilePtr s_OriginalSFileOpenFile;
     static SFileOpenFileExPtr s_OriginalSFileOpenFileEx;
+    static SVidPlayBeginPtr s_OriginalSVidPlayBegin;
 
     // Logging (using standard C++)
     static std::ofstream s_logFile;
@@ -71,6 +85,17 @@ private:
         DWORD dwSearchScope,
         HANDLE* phFile
     );
+
+    static BOOL WINAPI HookedSVidPlayBegin(
+        char *filename,
+        int a2,
+        int* a3,
+        int* a4,
+        int* a5,
+        int flags,
+        HANDLE* video
+    );
+
 
 public:
     CMpqFileListerPlugin();

@@ -1,10 +1,10 @@
 # MpqFileLister
 
-An [MPQDraft](https://github.com/sjoblomj/MPQDraft) plugin that logs all file access attempts made through Storm.dll's `SFileOpenFile` and `SFileOpenFileEx` functions.
+An [MPQDraft](https://github.com/sjoblomj/MPQDraft) plugin that logs all file access attempts made through Storm.dll's `SFileOpenFile`, `SFileOpenFileEx` and `SVidPlayBegin` functions.
 
 ## Overview
 
-This plugin intercepts calls to `SFileOpenFile` and `SFileOpenFileEx` in Storm.dll - the functions Blizzard games use to open files from MPQ archives. Every filename the game attempts to open is logged to a text file.
+This plugin intercepts calls to `SFileOpenFile`,`SFileOpenFileEx` and `SVidPlayBegin` in Storm.dll - the functions Blizzard games use to open files from MPQ archives. Every filename the game attempts to open is logged to a text file.
 
 This is useful for:
 - **Modding**: Discover which game assets are loaded and when.

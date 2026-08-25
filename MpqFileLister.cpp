@@ -1,5 +1,5 @@
 /*
-    MpqFileLister - An MPQDraft plugin that logs all SFileOpenFile and SFileOpenFileEx calls
+    MpqFileLister - An MPQDraft plugin that logs all SFileOpenFile, SFileOpenFileEx and SVidPlayBegin calls
 */
 
 #include "MpqFileLister.h"
@@ -23,6 +23,7 @@ static constexpr uint32_t SFILEOPENFILE_ORDINAL          = 0x10B;   // 267
 static constexpr uint32_t SFILEOPENFILEEX_ORDINAL        = 0x10C;   // 268
 static constexpr uint32_t SFILEGETFILEARCHIVE_ORDINAL    = 0x108;   // 264
 static constexpr uint32_t SFILEGETARCHIVENAME_ORDINAL    = 0x113;   // 275
+static constexpr uint32_t SVIDPLAYBEGIN_ORDINAL          = 0x1C6;   // 454
 
 // Function pointer types for archive name lookup
 // BOOL SFileGetFileArchive(HANDLE hFile, HANDLE* phArchive)
@@ -39,6 +40,7 @@ CMpqFileListerPlugin g_MpqFileLister;
 // Static member initialization
 SFileOpenFilePtr CMpqFileListerPlugin::s_OriginalSFileOpenFile = nullptr;
 SFileOpenFileExPtr CMpqFileListerPlugin::s_OriginalSFileOpenFileEx = nullptr;
+SVidPlayBeginPtr CMpqFileListerPlugin::s_OriginalSVidPlayBegin = nullptr;
 std::ofstream CMpqFileListerPlugin::s_logFile;
 std::mutex CMpqFileListerPlugin::s_logMutex;
 std::string CMpqFileListerPlugin::s_logFilePath;
@@ -289,6 +291,28 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSFileOpenFileEx(
     return result;
 }
 
+// The hook function - this is called instead of the original SVidPlayBegin
+BOOL WINAPI CMpqFileListerPlugin::HookedSVidPlayBegin(
+    char *filename,
+    int a2,
+    int* a3,
+    int* a4,
+    int* a5,
+    int flags,
+    HANDLE* video)
+{
+    // Call the original function first to see if the file was found
+    BOOL result = FALSE;
+    if (s_OriginalSVidPlayBegin)
+        result = s_OriginalSVidPlayBegin(filename, a2, a3, a4, a5, flags, video);
+
+    // Log the file access
+    if (result)
+        LogFileAccess(filename, nullptr);
+
+    return result;
+}
+
 BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftServer)
 {
     (void)lpMPQDraftServer;
@@ -344,6 +368,7 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
     // Select ordinals based on target game
     uint32_t sFileOpenFileOrdinal;
     uint32_t sFileOpenFileExOrdinal;
+    uint32_t sVidPlayBeginOrdinal;
     uint32_t sFileGetFileArchiveOrdinal;
     uint32_t sFileGetArchiveNameOrdinal;
 
@@ -351,6 +376,7 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
     {
         sFileOpenFileOrdinal = SFILEOPENFILE_D1_ORDINAL;
         sFileOpenFileExOrdinal = SFILEOPENFILEEX_D1_ORDINAL;
+        sVidPlayBeginOrdinal = SVIDPLAYBEGIN_ORDINAL;
         sFileGetFileArchiveOrdinal = SFILEGETFILEARCHIVE_D1_ORDINAL;
         sFileGetArchiveNameOrdinal = SFILEGETARCHIVENAME_D1_ORDINAL;
     }
@@ -358,6 +384,7 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
     {
         sFileOpenFileOrdinal = SFILEOPENFILE_ORDINAL;
         sFileOpenFileExOrdinal = SFILEOPENFILEEX_ORDINAL;
+        sVidPlayBeginOrdinal = SVIDPLAYBEGIN_ORDINAL;
         sFileGetFileArchiveOrdinal = SFILEGETFILEARCHIVE_ORDINAL;
         sFileGetArchiveNameOrdinal = SFILEGETARCHIVENAME_ORDINAL;
     }
@@ -370,11 +397,14 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
     s_OriginalSFileOpenFileEx = reinterpret_cast<SFileOpenFileExPtr>(
         reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)sFileOpenFileExOrdinal)));
 
-    if (!s_OriginalSFileOpenFile && !s_OriginalSFileOpenFileEx)
+    s_OriginalSVidPlayBegin = reinterpret_cast<SVidPlayBeginPtr>(
+        reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)sVidPlayBeginOrdinal)));
+
+    if (!s_OriginalSFileOpenFile && !s_OriginalSFileOpenFileEx && !s_OriginalSVidPlayBegin)
     {
         if (s_logFile.is_open())
         {
-            s_logFile << "ERROR: Neither SFileOpenFile nor SFileOpenFileEx found in Storm.dll\n";
+            s_logFile << "ERROR: Neither SFileOpenFile, SFileOpenFileEx nor SVidPlayBegin found in Storm.dll\n";
         }
         return TRUE;  // Return TRUE to not abort the patch
     }
@@ -407,6 +437,17 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
             "Storm.dll",
             reinterpret_cast<FARPROC>(reinterpret_cast<void*>(s_OriginalSFileOpenFileEx)),
             reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSFileOpenFileEx)),
+            TRUE  // Recursive - patch all loaded modules
+        );
+    }
+
+    if (s_OriginalSVidPlayBegin)
+    {
+        PatchImportEntry(
+            hHostProcess,
+            "Storm.dll",
+            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(s_OriginalSVidPlayBegin)),
+            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSVidPlayBegin)),
             TRUE  // Recursive - patch all loaded modules
         );
     }

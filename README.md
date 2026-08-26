@@ -1,15 +1,31 @@
 # MpqFileLister
 
-An [MPQDraft](https://github.com/sjoblomj/MPQDraft) plugin that logs all file access attempts made through Storm.dll's `SFileOpenFile`, `SFileOpenFileEx` and `SVidPlayBegin` functions.
+An [MPQDraft](https://github.com/sjoblomj/MPQDraft) plugin that logs all file access attempts made through Storm.dll's filename-based asset-loading functions.
 
 ## Overview
 
-This plugin intercepts calls to `SFileOpenFile`,`SFileOpenFileEx` and `SVidPlayBegin` in Storm.dll - the functions Blizzard games use to open files from MPQ archives. Every filename the game attempts to open is logged to a text file.
+This plugin intercepts every Storm.dll function that fetches an asset from an MPQ archive by filename - `SFileOpenFile`, `SFileOpenFileEx`, `SFileLoadFile`, `SFileLoadFileEx`, `SBmpLoadImage`, `SBmpAllocLoadImage` and `SVidPlayBegin`. Every filename the game attempts to open is logged to a text file. See [Hooked functions](#hooked-functions) below for what each one does and which target games export it.
 
 This is useful for:
 - **Modding**: Discover which game assets are loaded and when.
 - **Namebreaking**: MPQs sometimes don't contain the names of the files it contains. Use this to list all file names that are accessed.
 - **Understanding**: Learn how the game loads its resources.
+
+## Hooked functions
+
+| Function | What it does | Diablo I | Later games |
+|----------|---------------|:--------:|:------------:|
+| `SFileOpenFile` | Opens a file by name, searching the default set of mounted archives, and returns a handle for later `SFileReadFile` calls. | ✅ | ✅ |
+| `SFileOpenFileEx` | Same as `SFileOpenFile`, but lets the caller target a specific archive handle and/or search-scope flags. | ✅ | ✅ |
+| `SFileLoadFile` | Loads an entire file by name in one call, with Storm allocating the buffer itself (no separate open/read/close). | ❌ not exported | ✅ |
+| `SFileLoadFileEx` | Same as `SFileLoadFile`, but targets a specific archive handle/search scope. | ❌ not exported | ✅ |
+| `SBmpLoadImage` | Fetches an image file by name and decodes it directly into a caller-supplied buffer. This is how menus load PCX backgrounds and other UI art - it bypasses `SFileOpenFile` entirely, combining the file lookup and image decode into one call. | ✅ | ✅ |
+| `SBmpAllocLoadImage` | Same as `SBmpLoadImage`, but Storm allocates the pixel buffer itself via a caller-supplied allocation callback. Also used for PCX/UI art. | ❌ not exported | ✅ |
+| `SVidPlayBegin` | Fetches and begins streaming a video (`.smk`) by filename, locating and opening the file internally rather than requiring the caller to first obtain a file handle. | ✅ | ✅ |
+
+"Diablo I" and "Later games" refer to the **Target game** setting described under [Configuration](#configuration) below. The plugin selects Storm.dll export ordinals based on this setting; where a function is marked "not exported", Diablo I's Storm.dll simply doesn't have that entry point, so the plugin silently skips hooking it for that target.
+
+The plugin also resolves (but does not hook) `SFileGetFileArchive` and `SFileGetArchiveName`, used only to look up which MPQ archive a given file was opened from when a log format that includes the archive name is selected. `SFileGetArchiveName` is not exported by Diablo I's Storm.dll, so archive names are unavailable for that target regardless of the chosen log format.
 
 ## Usage
 

@@ -1,10 +1,5 @@
 /*
-    MpqFileLister - An MPQDraft plugin that logs all SFileOpenFile,
-    SFileOpenFileEx and SVidPlayBegin calls
-
-    This plugin hooks the Storm.dll SFileOpenFile, SFileOpenFileEx and
-    SVidPlayBegin functions and logs every filename that the game attempts to
-    open from MPQ archives.
+    MpqFileLister - An MPQDraft plugin that logs all file access attempts to Storm.dll
 */
 
 #ifndef MPQFILELISTER_H
@@ -52,6 +47,51 @@ typedef BOOL (WINAPI *SVidPlayBeginPtr)(
     HANDLE* video
 );
 
+// SFileLoadFile - loads an entire file by name into a Storm-allocated buffer
+typedef BOOL (WINAPI *SFileLoadFilePtr)(
+    LPCSTR lpFileName,
+    LPVOID* lplpFileData,
+    LPDWORD lpdwFileSize,
+    DWORD dwFlags1,
+    DWORD dwFlags2
+);
+
+// SFileLoadFileEx - same as SFileLoadFile, but targets a specific archive/search scope
+typedef BOOL (WINAPI *SFileLoadFileExPtr)(
+    HANDLE hMpq,
+    LPCSTR lpFileName,
+    LPVOID* lplpFileData,
+    LPDWORD lpdwFileSize,
+    DWORD dwFlags1,
+    DWORD dwFlags2,
+    LPVOID lpOverlapped
+);
+
+// SBmpLoadImage - fetches an image by name, decoding it into a caller-supplied buffer
+typedef BOOL (WINAPI *SBmpLoadImagePtr)(
+    LPCSTR lpFileName,
+    LPPALETTEENTRY lpPalette,
+    LPBYTE lpBits,
+    DWORD dwBitsSize,
+    LPDWORD lpdwWidth,
+    LPDWORD lpdwHeight,
+    LPDWORD lpdwBpp
+);
+
+// SBmpAllocLoadImage - same as SBmpLoadImage, but Storm allocates the pixel buffer.
+// The alloc-callback parameter is passed through untouched, so it's typed as an
+// opaque pointer here rather than a fully-specified callback signature.
+typedef BOOL (WINAPI *SBmpAllocLoadImagePtr)(
+    LPCSTR lpFileName,
+    LPPALETTEENTRY lpPalette,
+    LPBYTE* lplpBits,
+    LPDWORD lpdwWidth,
+    LPDWORD lpdwHeight,
+    LPDWORD lpdwBpp,
+    LPDWORD lpdwSize,
+    LPVOID lpAllocProc
+);
+
 // The plugin class
 class CMpqFileListerPlugin
 {
@@ -64,6 +104,10 @@ private:
     static SFileOpenFilePtr s_OriginalSFileOpenFile;
     static SFileOpenFileExPtr s_OriginalSFileOpenFileEx;
     static SVidPlayBeginPtr s_OriginalSVidPlayBegin;
+    static SFileLoadFilePtr s_OriginalSFileLoadFile;
+    static SFileLoadFileExPtr s_OriginalSFileLoadFileEx;
+    static SBmpLoadImagePtr s_OriginalSBmpLoadImage;
+    static SBmpAllocLoadImagePtr s_OriginalSBmpAllocLoadImage;
 
     // Logging (using standard C++)
     static std::ofstream s_logFile;
@@ -94,6 +138,45 @@ private:
         int* a5,
         int flags,
         HANDLE* video
+    );
+
+    static BOOL WINAPI HookedSFileLoadFile(
+        LPCSTR lpFileName,
+        LPVOID* lplpFileData,
+        LPDWORD lpdwFileSize,
+        DWORD dwFlags1,
+        DWORD dwFlags2
+    );
+
+    static BOOL WINAPI HookedSFileLoadFileEx(
+        HANDLE hMpq,
+        LPCSTR lpFileName,
+        LPVOID* lplpFileData,
+        LPDWORD lpdwFileSize,
+        DWORD dwFlags1,
+        DWORD dwFlags2,
+        LPVOID lpOverlapped
+    );
+
+    static BOOL WINAPI HookedSBmpLoadImage(
+        LPCSTR lpFileName,
+        LPPALETTEENTRY lpPalette,
+        LPBYTE lpBits,
+        DWORD dwBitsSize,
+        LPDWORD lpdwWidth,
+        LPDWORD lpdwHeight,
+        LPDWORD lpdwBpp
+    );
+
+    static BOOL WINAPI HookedSBmpAllocLoadImage(
+        LPCSTR lpFileName,
+        LPPALETTEENTRY lpPalette,
+        LPBYTE* lplpBits,
+        LPDWORD lpdwWidth,
+        LPDWORD lpdwHeight,
+        LPDWORD lpdwBpp,
+        LPDWORD lpdwSize,
+        LPVOID lpAllocProc
     );
 
 

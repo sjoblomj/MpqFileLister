@@ -13,11 +13,8 @@
 static constexpr int IDC_DESCRIPTION = 101;
 static constexpr int IDC_UNIQUE_CHECKBOX = 102;
 static constexpr int IDC_LOG_FORMAT_GROUPBOX = 103;
-static constexpr int IDC_TIMESTAMP_INFO_LABEL = 104;
-static constexpr int IDC_RADIO_TIMESTAMP_ARCHIVE_FILENAME = 105;
-static constexpr int IDC_RADIO_ARCHIVE_FILENAME = 106;
-static constexpr int IDC_RADIO_TIMESTAMP_FILENAME = 107;
-static constexpr int IDC_RADIO_FILENAME_ONLY = 108;
+static constexpr int IDC_LOG_FORMAT_HELP_LABEL = 104;
+static constexpr int IDC_LOG_FORMAT_EDIT = 105;
 static constexpr int IDC_LOG_FILENAME_GROUPBOX = 109;
 static constexpr int IDC_PATH_LABEL = 110;
 static constexpr int IDC_PATH_EDIT = 111;
@@ -33,8 +30,7 @@ static const char* DESCRIPTION_TEXT =
     "  By Ojan (Johan Sj\xf6" "blom)\r\n"
     "\r\n"
     "This plugin intercepts all file access attempts made by the game "
-    "through Storm.dll's SFileOpenFile, SFileOpenFileEx and "
-    "SVidPlayBegin functions. "
+    "through Storm.dll. "
     "Every filename that the game tries to open from MPQ archives is "
     "logged to a text file."
     "\r\n\r\n"
@@ -44,11 +40,19 @@ static const char* DESCRIPTION_TEXT =
 
 static const char* UNIQUE_CHECKBOX_TEXT = "Log unique filenames only (no duplicates)";
 static const char* LOG_FORMAT_GROUPBOX_TEXT = "Log format";
-static const char* TIMESTAMP_INFO_TEXT = "Timestamp is in milliseconds since epoch (1970-01-01)";
-static const char* RADIO_TIMESTAMP_ARCHIVE_FILENAME_TEXT = "<timestamp> <MPQ archive>: <filename>";
-static const char* RADIO_ARCHIVE_FILENAME_TEXT = "<MPQ archive>: <filename>";
-static const char* RADIO_TIMESTAMP_FILENAME_TEXT = "<timestamp> <filename>";
-static const char* RADIO_FILENAME_ONLY_TEXT = "<filename>";
+static const char* LOG_FORMAT_HELP_TEXT =
+    "Enter a format for each logged line, using these placeholders:\r\n"
+    "%t = timestamp (milliseconds since epoch, 1970-01-01)\r\n"
+    "%a = MPQ archive name (not available for every call, and never available "
+    "when targeting Diablo I)\r\n"
+    "%f = filename\r\n"
+    "%c = the Storm.dll call that was made, e.g. SFileOpenFileEx\r\n"
+    "%p = that call's non-pointer parameters, e.g. dwSearchScope for SFileOpenFileEx\r\n"
+    "%P = that call's pointer parameters, as addresses (plus the value pointed to, "
+    "where that's known to be safe to read), e.g. phFile for SFileOpenFileEx\r\n"
+    "%% = a literal '%' character\r\n"
+    "See the README for exactly what %p and %P include for each call.\r\n"
+    "Example: \"%t %a: %f (%c, %p, %P)\"";
 static const char* LOG_FILENAME_GROUPBOX_TEXT = "Log file name";
 static const char* PATH_LABEL_TEXT = "Enter filename only (not full path) to create the file in the game's directory";
 static const char* BROWSE_BUTTON_TEXT = "&Browse...";
@@ -84,8 +88,7 @@ struct DialogSizes
 {
     SIZE desc;
     SIZE uniqueCheckbox;
-    SIZE timestampInfo;
-    SIZE radio1, radio2, radio3, radio4;
+    SIZE logFormatHelp;
     SIZE radioDiablo1, radioLater;
     SIZE label;
     SIZE browse;
@@ -153,11 +156,7 @@ static DialogSizes MeasureAllSizes(HDC hdc, int maxDescWidth = 400)
 
     sizes.desc = MeasureText(hdc, DESCRIPTION_TEXT, maxDescWidth);
     sizes.uniqueCheckbox = MeasureText(hdc, UNIQUE_CHECKBOX_TEXT);
-    sizes.timestampInfo = MeasureText(hdc, TIMESTAMP_INFO_TEXT);
-    sizes.radio1 = MeasureText(hdc, RADIO_TIMESTAMP_ARCHIVE_FILENAME_TEXT);
-    sizes.radio2 = MeasureText(hdc, RADIO_ARCHIVE_FILENAME_TEXT);
-    sizes.radio3 = MeasureText(hdc, RADIO_TIMESTAMP_FILENAME_TEXT);
-    sizes.radio4 = MeasureText(hdc, RADIO_FILENAME_ONLY_TEXT);
+    sizes.logFormatHelp = MeasureText(hdc, LOG_FORMAT_HELP_TEXT, maxDescWidth);
     sizes.radioDiablo1 = MeasureText(hdc, RADIO_DIABLO1_TEXT);
     sizes.radioLater = MeasureText(hdc, RADIO_LATER_TEXT);
     sizes.label = MeasureText(hdc, PATH_LABEL_TEXT);
@@ -167,10 +166,6 @@ static DialogSizes MeasureAllSizes(HDC hdc, int maxDescWidth = 400)
 
     // Add padding
     AddRadioPadding(sizes.uniqueCheckbox);
-    AddRadioPadding(sizes.radio1);
-    AddRadioPadding(sizes.radio2);
-    AddRadioPadding(sizes.radio3);
-    AddRadioPadding(sizes.radio4);
     AddRadioPadding(sizes.radioDiablo1);
     AddRadioPadding(sizes.radioLater);
     AddButtonPadding(sizes.browse, 16);
@@ -183,9 +178,8 @@ static DialogSizes MeasureAllSizes(HDC hdc, int maxDescWidth = 400)
 // Calculate height of log format group box
 static int CalculateLogFormatGroupBoxHeight(const DialogSizes& sizes)
 {
-    return GROUPBOX_TITLE_HEIGHT + sizes.timestampInfo.cy + SMALL_SPACING +
-           sizes.radio1.cy + SMALL_SPACING + sizes.radio2.cy + SMALL_SPACING +
-           sizes.radio3.cy + SMALL_SPACING + sizes.radio4.cy + GROUPBOX_BOTTOM_PADDING;
+    return GROUPBOX_TITLE_HEIGHT + sizes.logFormatHelp.cy + SPACING +
+           EDIT_HEIGHT + GROUPBOX_BOTTOM_PADDING;
 }
 
 // Calculate height of log filename group box
@@ -222,20 +216,31 @@ static void HandleBrowseButton(HWND hDlg)
     }
 }
 
+// Reads the full text of an edit control regardless of its length, so long
+// input is never silently truncated by a fixed-size buffer.
+static std::string GetDlgItemTextDynamic(HWND hDlg, int controlId)
+{
+    HWND hControl = GetDlgItem(hDlg, controlId);
+    if (!hControl)
+        return "";
+
+    int length = GetWindowTextLengthA(hControl);
+    if (length <= 0)
+        return "";
+
+    std::string text(static_cast<size_t>(length), '\0');
+    int copied = GetWindowTextA(hControl, text.data(), length + 1);
+    text.resize(copied > 0 ? static_cast<size_t>(copied) : 0);
+    return text;
+}
+
 static void HandleOkButton(HWND hDlg)
 {
     // Save checkbox state
     g_logUniqueOnly = (IsDlgButtonChecked(hDlg, IDC_UNIQUE_CHECKBOX) == BST_CHECKED);
 
-    // Save log format radio button state
-    if (IsDlgButtonChecked(hDlg, IDC_RADIO_TIMESTAMP_ARCHIVE_FILENAME) == BST_CHECKED)
-        g_logFormat = LogFormat::TIMESTAMP_ARCHIVE_FILENAME;
-    else if (IsDlgButtonChecked(hDlg, IDC_RADIO_ARCHIVE_FILENAME) == BST_CHECKED)
-        g_logFormat = LogFormat::ARCHIVE_FILENAME;
-    else if (IsDlgButtonChecked(hDlg, IDC_RADIO_TIMESTAMP_FILENAME) == BST_CHECKED)
-        g_logFormat = LogFormat::TIMESTAMP_FILENAME;
-    else if (IsDlgButtonChecked(hDlg, IDC_RADIO_FILENAME_ONLY) == BST_CHECKED)
-        g_logFormat = LogFormat::FILENAME_ONLY;
+    // Save log format
+    g_logFormat = GetDlgItemTextDynamic(hDlg, IDC_LOG_FORMAT_EDIT);
 
     // Save target game radio button state
     if (IsDlgButtonChecked(hDlg, IDC_RADIO_DIABLO1) == BST_CHECKED)
@@ -259,8 +264,7 @@ static void CalculateDialogLayout(HDC hdc)
 
     // Calculate required width (widest element + margins)
     int contentWidth = MaxWidth({
-        sizes.desc.cx, sizes.uniqueCheckbox.cx,
-        sizes.radio1.cx, sizes.radio2.cx, sizes.radio3.cx, sizes.radio4.cx,
+        sizes.desc.cx, sizes.uniqueCheckbox.cx, sizes.logFormatHelp.cx,
         sizes.radioDiablo1.cx, sizes.radioLater.cx, sizes.label.cx
     });
 
@@ -319,57 +323,20 @@ static HWND CreateDialogControls(HWND hDlg, HMODULE hModule)
                   MARGIN, y, contentWidth, logFormatGroupBoxHeight,
                   hDlg, IDC_LOG_FORMAT_GROUPBOX, hModule, hFont);
 
-    // Timestamp info label inside the log format group box
+    // Help text inside the log format group box, explaining the placeholders
     int logFormatInnerY = y + GROUPBOX_TITLE_HEIGHT;
     int logFormatInnerX = MARGIN + GROUPBOX_INNER_INDENT;
 
-    CreateControl("STATIC", TIMESTAMP_INFO_TEXT, WS_CHILD | WS_VISIBLE | SS_LEFT,
-                  logFormatInnerX, logFormatInnerY, sizes.timestampInfo.cx, sizes.timestampInfo.cy,
-                  hDlg, IDC_TIMESTAMP_INFO_LABEL, hModule, hFont);
-    logFormatInnerY += sizes.timestampInfo.cy + SMALL_SPACING;
+    CreateControl("STATIC", LOG_FORMAT_HELP_TEXT, WS_CHILD | WS_VISIBLE | SS_LEFT,
+                  logFormatInnerX, logFormatInnerY, sizes.logFormatHelp.cx, sizes.logFormatHelp.cy,
+                  hDlg, IDC_LOG_FORMAT_HELP_LABEL, hModule, hFont);
+    logFormatInnerY += sizes.logFormatHelp.cy + SPACING;
 
-    // Radio buttons inside the log format group box
-    CreateControl("BUTTON", RADIO_TIMESTAMP_ARCHIVE_FILENAME_TEXT,
-                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON | WS_GROUP,
-                  logFormatInnerX, logFormatInnerY, sizes.radio1.cx + SPACING, sizes.radio1.cy,
-                  hDlg, IDC_RADIO_TIMESTAMP_ARCHIVE_FILENAME, hModule, hFont);
-    logFormatInnerY += sizes.radio1.cy + SMALL_SPACING;
-
-    CreateControl("BUTTON", RADIO_ARCHIVE_FILENAME_TEXT,
-                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
-                  logFormatInnerX, logFormatInnerY, sizes.radio2.cx + SPACING, sizes.radio2.cy,
-                  hDlg, IDC_RADIO_ARCHIVE_FILENAME, hModule, hFont);
-    logFormatInnerY += sizes.radio2.cy + SMALL_SPACING;
-
-    CreateControl("BUTTON", RADIO_TIMESTAMP_FILENAME_TEXT,
-                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
-                  logFormatInnerX, logFormatInnerY, sizes.radio3.cx + SPACING, sizes.radio3.cy,
-                  hDlg, IDC_RADIO_TIMESTAMP_FILENAME, hModule, hFont);
-    logFormatInnerY += sizes.radio3.cy + SMALL_SPACING;
-
-    CreateControl("BUTTON", RADIO_FILENAME_ONLY_TEXT,
-                  WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTORADIOBUTTON,
-                  logFormatInnerX, logFormatInnerY, sizes.radio4.cx + SPACING, sizes.radio4.cy,
-                  hDlg, IDC_RADIO_FILENAME_ONLY, hModule, hFont);
-
-    // Set initial radio button selection based on g_logFormat
-    int selectedRadio = IDC_RADIO_FILENAME_ONLY;
-    switch (g_logFormat)
-    {
-        case LogFormat::TIMESTAMP_ARCHIVE_FILENAME:
-            selectedRadio = IDC_RADIO_TIMESTAMP_ARCHIVE_FILENAME;
-            break;
-        case LogFormat::ARCHIVE_FILENAME:
-            selectedRadio = IDC_RADIO_ARCHIVE_FILENAME;
-            break;
-        case LogFormat::TIMESTAMP_FILENAME:
-            selectedRadio = IDC_RADIO_TIMESTAMP_FILENAME;
-            break;
-        case LogFormat::FILENAME_ONLY:
-            selectedRadio = IDC_RADIO_FILENAME_ONLY;
-            break;
-    }
-    CheckDlgButton(hDlg, selectedRadio, BST_CHECKED);
+    // Format text field inside the log format group box
+    int logFormatEditWidth = contentWidth - (2 * GROUPBOX_INNER_INDENT);
+    CreateControl("EDIT", g_logFormat.c_str(), WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+                  logFormatInnerX, logFormatInnerY, logFormatEditWidth, EDIT_HEIGHT,
+                  hDlg, IDC_LOG_FORMAT_EDIT, hModule, hFont, WS_EX_CLIENTEDGE);
 
     y += logFormatGroupBoxHeight + SPACING;
 

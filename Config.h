@@ -10,15 +10,6 @@
 
 // === Configuration variables ===
 
-// Log format options
-enum class LogFormat
-{
-    TIMESTAMP_ARCHIVE_FILENAME = 0,   // Print '<timestamp> <MPQ archive>: <filename>'
-    ARCHIVE_FILENAME = 1,             // Print '<MPQ archive>: <filename>'
-    TIMESTAMP_FILENAME = 2,           // Print '<timestamp> <filename>'
-    FILENAME_ONLY = 3                 // Print '<filename>'
-};
-
 // Target game options (determines which Storm.dll ordinals to use)
 enum class TargetGame
 {
@@ -26,8 +17,12 @@ enum class TargetGame
     LATER = 1      // StarCraft, Diablo II, Warcraft II, etc.
 };
 
+// Default log line format - see FormatLogEntry() in MpqFileLister.cpp for the
+// placeholder syntax (%t, %a, %f, %c, %p, %P, %%).
+extern const char* const DEFAULT_LOG_FORMAT;
+
 extern bool g_logUniqueOnly;
-extern LogFormat g_logFormat;
+extern std::string g_logFormat;
 extern TargetGame g_targetGame;
 extern std::string g_logFileName;
 

@@ -114,8 +114,15 @@ private:
     static std::mutex s_logMutex;
     static std::string s_logFilePath;
 
-    // Helper function for logging file access
-    static void LogFileAccess(const char* fileName, HANDLE fileHandle);
+    // Helper function for logging file access.
+    // callName is the Storm.dll function that was called (e.g. "SFileOpenFileEx");
+    // nonPointerParams and pointerParams are pre-formatted, human-readable summaries
+    // of that call's other arguments - the former for parameters that aren't pointers
+    // (e.g. "dwSearchScope=0x0"), the latter for parameters that are (e.g.
+    // "phFile=0x28fe1c (deref=0x1f4)") - used to satisfy the %p and %P format
+    // placeholders respectively. See FormatLogEntry() in MpqFileLister.cpp.
+    static void LogFileAccess(const char* fileName, HANDLE fileHandle, const char* callName,
+                               const std::string& nonPointerParams, const std::string& pointerParams);
 
     // Our hook functions
     static BOOL WINAPI HookedSFileOpenFile(

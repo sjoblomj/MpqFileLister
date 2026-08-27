@@ -7,8 +7,10 @@
 #include <fstream>
 
 // === Configuration variables ===
+const char* const DEFAULT_LOG_FORMAT = "%f";
+
 bool g_logUniqueOnly = true;
-LogFormat g_logFormat = LogFormat::FILENAME_ONLY;
+std::string g_logFormat = DEFAULT_LOG_FORMAT;
 TargetGame g_targetGame = TargetGame::LATER;
 std::string g_logFileName = "MpqFileLister_FileLog.txt";
 
@@ -45,9 +47,7 @@ void LoadConfig()
         }
         else if (line.rfind("LogFormat=", 0) == 0)
         {
-            int formatValue = std::stoi(line.substr(10));
-            if (formatValue >= 0 && formatValue <= 3)
-                g_logFormat = static_cast<LogFormat>(formatValue);
+            g_logFormat = line.substr(10);
         }
         else if (line.rfind("TargetGame=", 0) == 0)
         {
@@ -72,7 +72,7 @@ void SaveConfig()
         return;
 
     file << "LogUniqueOnly=" << (g_logUniqueOnly ? "1" : "0") << "\n";
-    file << "LogFormat=" << static_cast<int>(g_logFormat) << "\n";
+    file << "LogFormat=" << g_logFormat << "\n";
     file << "TargetGame=" << static_cast<int>(g_targetGame) << "\n";
     file << "LogFileName=" << g_logFileName << "\n";
 }

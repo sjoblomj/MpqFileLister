@@ -13,6 +13,7 @@
 #include <chrono>
 #include <sstream>
 #include <iomanip>
+#include <vector>
 
 // Storm.dll ordinals
 static constexpr uint32_t SFILEOPENFILE_D1_ORDINAL       = 0x4E;    // 78
@@ -181,6 +182,70 @@ BOOL WINAPI CMpqFileListerPlugin::GetModules(void* lpPluginModules, DWORD* lpnNu
     return TRUE;
 }
 
+// Joins "key=value" style strings into a single ", "-separated string, e.g. for %p/%P
+static std::string JoinParts(const std::vector<std::string>& parts)
+{
+    std::string result;
+    for (size_t i = 0; i < parts.size(); ++i)
+    {
+        if (i > 0)
+            result += ", ";
+        result += parts[i];
+    }
+    return result;
+}
+
+// Formats a raw pointer value for the log, e.g. "0x28fe1c", or "(null)".
+static std::string PointerToString(const void* ptr)
+{
+    if (!ptr)
+        return "(null)";
+    std::ostringstream oss;
+    oss << ptr;
+    return oss.str();
+}
+
+// For a pointer parameter whose target either isn't a simple scalar (a raw byte/pixel
+// buffer, a 256-entry palette array, an opaque structure) or whose validity we can't
+// establish (an undocumented parameter of unknown lifetime, a callback/function pointer):
+// report the address only. Dereferencing any of these would either be meaningless, risk
+// crashing the hooked game, or require dumping arbitrary binary data into a text log.
+static std::string PointerOnly(const char* name, const void* ptr)
+{
+    return std::string(name) + "=" + PointerToString(ptr);
+}
+
+// For a pointer-to-DWORD output parameter that a successful call is known to populate
+// (e.g. SBmpLoadImage's lpdwWidth): report both the address and the value it points to.
+static std::string PointerWithDword(const char* name, const DWORD* ptr)
+{
+    std::string s = PointerOnly(name, ptr);
+    if (ptr)
+        s += " (deref=" + std::to_string(*ptr) + ")";
+    return s;
+}
+
+// For a pointer-to-HANDLE output parameter (the common Storm "give me a handle back"
+// idiom, e.g. SFileOpenFile's hFile): report both the address and the resulting handle.
+static std::string PointerWithHandle(const char* name, HANDLE* ptr)
+{
+    std::string s = PointerOnly(name, ptr);
+    if (ptr && *ptr)
+        s += " (deref=" + PointerToString(*ptr) + ")";
+    return s;
+}
+
+// For a pointer-to-pointer output buffer (e.g. SFileLoadFile's lplpFileData): report the
+// address plus the resulting buffer's address - one level of dereference to reveal where
+// the data ended up, without ever dumping the buffer's (arbitrary-length, binary) contents.
+static std::string PointerWithPointer(const char* name, void* const* ptr)
+{
+    std::string s = PointerOnly(name, ptr);
+    if (ptr)
+        s += " (deref=" + PointerToString(*ptr) + ")";
+    return s;
+}
+
 // Helper function to get Unix epoch timestamp in milliseconds
 static std::string GetTimestampMs()
 {
@@ -189,21 +254,70 @@ static std::string GetTimestampMs()
     return std::to_string(ms);
 }
 
-// Helper function to log file access (shared by both hook functions)
-void CMpqFileListerPlugin::LogFileAccess(const char* fileName, HANDLE fileHandle)
+// Expands a user-supplied log format string, replacing placeholders with the
+// values for one logged call:
+//   %t - timestamp (ms since epoch)      %p - that call's non-pointer parameters
+//   %a - MPQ archive name                %P - that call's pointer parameters
+//   %f - filename                        %% - a literal '%' character
+//   %c - the Storm.dll call, e.g. SFileOpenFileEx
+// Any other character (including an unrecognized "%x" sequence, which is kept
+// as-is) is copied through unchanged. Operating purely on std::string with
+// index-checked access means there is no fixed-size buffer to overflow,
+// regardless of how long the format string or the substituted values are.
+static std::string FormatLogEntry(const std::string& format, const std::string& timestamp,
+                                   const std::string& archiveName, const std::string& fileName,
+                                   const std::string& callName, const std::string& nonPointerParams,
+                                   const std::string& pointerParams)
+{
+    std::string result;
+    result.reserve(format.size());
+
+    for (size_t i = 0; i < format.size(); ++i)
+    {
+        char c = format[i];
+        if (c != '%' || i + 1 >= format.size())
+        {
+            result += c;
+            continue;
+        }
+
+        char specifier = format[++i];
+        switch (specifier)
+        {
+            case 't': result += timestamp;       break;
+            case 'a': result += archiveName;     break;
+            case 'f': result += fileName;        break;
+            case 'c': result += callName;        break;
+            case 'p': result += nonPointerParams; break;
+            case 'P': result += pointerParams;   break;
+            case '%': result += '%';             break;
+            default:
+                // Unrecognized specifier: keep both characters literally
+                result += '%';
+                result += specifier;
+                break;
+        }
+    }
+
+    return result;
+}
+
+// Helper function to log file access (shared by all hook functions)
+void CMpqFileListerPlugin::LogFileAccess(const char* fileName, HANDLE fileHandle,
+                                          const char* callName, const std::string& nonPointerParams,
+                                          const std::string& pointerParams)
 {
     if (!fileName || !s_logFile.is_open())
         return;
 
     std::lock_guard<std::mutex> lock(s_logMutex);
 
-    // Build the log entry based on the selected format
-    std::string logEntry;
+    // Look up the archive name, if the format asks for it and it can be resolved.
+    // Not every call yields an HSFILE (e.g. SVidPlayBegin, SFileLoadFile), and
+    // SFileGetArchiveName is not exported by Diablo I's Storm.dll at all - in
+    // both cases %a simply expands to an empty string.
     std::string archiveName;
-
-    // Get archive name if needed for the format
-    bool needArchive = (g_logFormat == LogFormat::TIMESTAMP_ARCHIVE_FILENAME ||
-                        g_logFormat == LogFormat::ARCHIVE_FILENAME);
+    bool needArchive = g_logFormat.find("%a") != std::string::npos;
 
     if (needArchive && fileHandle && s_SFileGetFileArchive && s_SFileGetArchiveName)
     {
@@ -220,7 +334,7 @@ void CMpqFileListerPlugin::LogFileAccess(const char* fileName, HANDLE fileHandle
         }
     }
 
-    // Build the uniqueness key (without timestamp) for duplicate detection
+    // Build the uniqueness key (independent of the chosen format/timestamp) for duplicate detection
     std::string uniqueKey;
     if (!archiveName.empty())
         uniqueKey = archiveName + ": " + fileName;
@@ -228,42 +342,17 @@ void CMpqFileListerPlugin::LogFileAccess(const char* fileName, HANDLE fileHandle
         uniqueKey = fileName;
 
     // Check if we should log this entry
-    bool shouldLog = true;
     if (g_logUniqueOnly)
     {
         // Only log if we haven't seen this entry before (based on uniqueKey, not timestamp)
         auto [it, inserted] = s_seenFiles.insert(uniqueKey);
-        shouldLog = inserted;
+        if (!inserted)
+            return;
     }
 
-    if (!shouldLog)
-        return;
-
-    // Build the log entry according to the selected format
-    switch (g_logFormat)
-    {
-        case LogFormat::TIMESTAMP_ARCHIVE_FILENAME:
-            logEntry = GetTimestampMs() + " ";
-            if (!archiveName.empty())
-                logEntry += archiveName + ": ";
-            logEntry += fileName;
-            break;
-
-        case LogFormat::ARCHIVE_FILENAME:
-            if (!archiveName.empty())
-                logEntry = archiveName + ": " + fileName;
-            else
-                logEntry = fileName;
-            break;
-
-        case LogFormat::TIMESTAMP_FILENAME:
-            logEntry = GetTimestampMs() + " " + fileName;
-            break;
-
-        case LogFormat::FILENAME_ONLY:
-            logEntry = fileName;
-            break;
-    }
+    std::string logEntry = FormatLogEntry(g_logFormat, GetTimestampMs(), archiveName,
+                                           fileName, callName ? callName : "",
+                                           nonPointerParams, pointerParams);
 
     s_logFile << logEntry << "\n";
     s_logFile.flush();
@@ -281,7 +370,12 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSFileOpenFile(
 
     // Log the file access
     if (result && hFile && *hFile)
-        LogFileAccess(lpFileName, *hFile);
+    {
+        std::vector<std::string> ptrParts;
+        ptrParts.push_back(PointerOnly("lpFileName", lpFileName));
+        ptrParts.push_back(PointerWithHandle("hFile", hFile));
+        LogFileAccess(lpFileName, *hFile, "SFileOpenFile", "", JoinParts(ptrParts));
+    }
 
     return result;
 }
@@ -300,7 +394,17 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSFileOpenFileEx(
 
     // Log the file access
     if (result && phFile && *phFile)
-        LogFileAccess(szFileName, *phFile);
+    {
+        std::ostringstream nonPtr;
+        nonPtr << "dwSearchScope=0x" << std::hex << dwSearchScope;
+
+        std::vector<std::string> ptrParts;
+        ptrParts.push_back(PointerOnly("hMpq", hMpq));
+        ptrParts.push_back(PointerOnly("szFileName", szFileName));
+        ptrParts.push_back(PointerWithHandle("phFile", phFile));
+
+        LogFileAccess(szFileName, *phFile, "SFileOpenFileEx", nonPtr.str(), JoinParts(ptrParts));
+    }
 
     return result;
 }
@@ -320,9 +424,27 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSVidPlayBegin(
     if (s_OriginalSVidPlayBegin)
         result = s_OriginalSVidPlayBegin(filename, a2, a3, a4, a5, flags, video);
 
-    // Log the file access
+    // Log the file access. a2-a5 are undocumented/unnamed in this reverse-engineered
+    // signature; a2 is a plain int, so it's reported by value like any other non-pointer
+    // parameter. a3-a5 are pointers of unknown validity/lifetime, so they're reported as
+    // raw addresses only, never dereferenced (dereferencing a pointer we don't understand
+    // risks crashing the hooked game). video is reported the same way as the hFile/phFile
+    // output-handle parameters elsewhere, since it follows the same "give me a handle
+    // back" idiom.
     if (result)
-        LogFileAccess(filename, nullptr);
+    {
+        std::ostringstream nonPtr;
+        nonPtr << "a2=" << a2 << ", flags=0x" << std::hex << flags;
+
+        std::vector<std::string> ptrParts;
+        ptrParts.push_back(PointerOnly("filename", filename));
+        ptrParts.push_back(PointerOnly("a3", a3));
+        ptrParts.push_back(PointerOnly("a4", a4));
+        ptrParts.push_back(PointerOnly("a5", a5));
+        ptrParts.push_back(PointerWithHandle("video", video));
+
+        LogFileAccess(filename, nullptr, "SVidPlayBegin", nonPtr.str(), JoinParts(ptrParts));
+    }
 
     return result;
 }
@@ -342,7 +464,17 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSFileLoadFile(
 
     // Log the file access (no HSFILE is returned by this API, so archive lookup is skipped)
     if (result)
-        LogFileAccess(lpFileName, nullptr);
+    {
+        std::ostringstream nonPtr;
+        nonPtr << "dwFlags1=0x" << std::hex << dwFlags1 << ", dwFlags2=0x" << dwFlags2;
+
+        std::vector<std::string> ptrParts;
+        ptrParts.push_back(PointerOnly("lpFileName", lpFileName));
+        ptrParts.push_back(PointerWithPointer("lplpFileData", reinterpret_cast<void* const*>(lplpFileData)));
+        ptrParts.push_back(PointerWithDword("lpdwFileSize", lpdwFileSize));
+
+        LogFileAccess(lpFileName, nullptr, "SFileLoadFile", nonPtr.str(), JoinParts(ptrParts));
+    }
 
     return result;
 }
@@ -364,7 +496,19 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSFileLoadFileEx(
 
     // Log the file access (no HSFILE is returned by this API, so archive lookup is skipped)
     if (result)
-        LogFileAccess(lpFileName, nullptr);
+    {
+        std::ostringstream nonPtr;
+        nonPtr << "dwFlags1=0x" << std::hex << dwFlags1 << ", dwFlags2=0x" << dwFlags2;
+
+        std::vector<std::string> ptrParts;
+        ptrParts.push_back(PointerOnly("hMpq", hMpq));
+        ptrParts.push_back(PointerOnly("lpFileName", lpFileName));
+        ptrParts.push_back(PointerWithPointer("lplpFileData", reinterpret_cast<void* const*>(lplpFileData)));
+        ptrParts.push_back(PointerWithDword("lpdwFileSize", lpdwFileSize));
+        ptrParts.push_back(PointerOnly("lpOverlapped", lpOverlapped));
+
+        LogFileAccess(lpFileName, nullptr, "SFileLoadFileEx", nonPtr.str(), JoinParts(ptrParts));
+    }
 
     return result;
 }
@@ -386,7 +530,19 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSBmpLoadImage(
 
     // Log the file access (no HSFILE is returned by this API, so archive lookup is skipped)
     if (result)
-        LogFileAccess(lpFileName, nullptr);
+    {
+        std::string nonPtr = "dwBitsSize=" + std::to_string(dwBitsSize);
+
+        std::vector<std::string> ptrParts;
+        ptrParts.push_back(PointerOnly("lpFileName", lpFileName));
+        ptrParts.push_back(PointerOnly("lpPalette", lpPalette));
+        ptrParts.push_back(PointerOnly("lpBits", lpBits));
+        ptrParts.push_back(PointerWithDword("lpdwWidth", lpdwWidth));
+        ptrParts.push_back(PointerWithDword("lpdwHeight", lpdwHeight));
+        ptrParts.push_back(PointerWithDword("lpdwBpp", lpdwBpp));
+
+        LogFileAccess(lpFileName, nullptr, "SBmpLoadImage", nonPtr, JoinParts(ptrParts));
+    }
 
     return result;
 }
@@ -407,9 +563,24 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSBmpAllocLoadImage(
     if (s_OriginalSBmpAllocLoadImage)
         result = s_OriginalSBmpAllocLoadImage(lpFileName, lpPalette, lplpBits, lpdwWidth, lpdwHeight, lpdwBpp, lpdwSize, lpAllocProc);
 
-    // Log the file access (no HSFILE is returned by this API, so archive lookup is skipped)
+    // Log the file access (no HSFILE is returned by this API, so archive lookup is skipped).
+    // Every parameter here is a pointer, so %p is always empty for this call - use %P.
+    // Callers may pass NULL for lpdwBpp/lpdwSize (as gamedata.cpp's alloc_load_bmp does),
+    // so PointerWithDword only adds a "(deref=...)" value when the caller asked for one.
     if (result)
-        LogFileAccess(lpFileName, nullptr);
+    {
+        std::vector<std::string> ptrParts;
+        ptrParts.push_back(PointerOnly("lpFileName", lpFileName));
+        ptrParts.push_back(PointerOnly("lpPalette", lpPalette));
+        ptrParts.push_back(PointerWithPointer("lplpBits", reinterpret_cast<void* const*>(lplpBits)));
+        ptrParts.push_back(PointerWithDword("lpdwWidth", lpdwWidth));
+        ptrParts.push_back(PointerWithDword("lpdwHeight", lpdwHeight));
+        ptrParts.push_back(PointerWithDword("lpdwBpp", lpdwBpp));
+        ptrParts.push_back(PointerWithDword("lpdwSize", lpdwSize));
+        ptrParts.push_back(PointerOnly("lpAllocProc", lpAllocProc));
+
+        LogFileAccess(lpFileName, nullptr, "SBmpAllocLoadImage", "", JoinParts(ptrParts));
+    }
 
     return result;
 }

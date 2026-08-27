@@ -38,16 +38,93 @@ The plugin also resolves (but does not hook) `SFileGetFileArchive` and `SFileGet
 
 Click "Configure" in MPQDraft to open the settings dialog:
 
-- **Log unique filenames only**: When enabled, each filename is logged only once (no duplicates). When disabled, every access is logged, even repeated ones.
-- **Log format**: Decides the logging format. Choose whether to log timestamp (in milliseconds since epoch, 1970-01-07), the name of the archive and the file name.
+- **Log unique filenames only**: When enabled, each filename is logged only once (no duplicates). Uniqueness is based on the archive name and filename, independent of whatever log format you choose - it is not affected by `%t`, `%c`, `%p` or `%P` varying between accesses. When disabled, every access is logged, even repeated ones.
+- **Log format**: A free-form text template for each logged line - see [Log format](#log-format) below.
 - **Log file name**: The name of the log file. If you enter just a filename (e.g., `FileLog.txt`), it will be created in the game's directory. You can also specify an absolute path.
 - **Target game**: Whether to target Diablo I, or later games.
 
 Settings are saved to `MpqFileLister.ini` next to the plugin.
 
+## Log format
+
+The log format is a template applied to every logged call. Any character is printed as-is, except for the following placeholders:
+
+| Placeholder | Expands to |
+|-------------|------------|
+| `%t` | Timestamp, in milliseconds since epoch (1970-01-01) |
+| `%a` | The MPQ archive name. Empty if unavailable - see caveats below |
+| `%f` | The filename that was passed to the hooked call |
+| `%c` | The name of the Storm.dll call that was made, e.g. `SFileOpenFileEx` |
+| `%p` | That call's **non-pointer** parameters - see [Call parameters](#call-parameters-p-and-p) below |
+| `%P` | That call's **pointer** parameters - see [Call parameters](#call-parameters-p-and-p) below |
+| `%%` | A literal `%` character |
+
+The default format is `%f` (filename only), matching the plugin's previous fixed behavior.
+
+Any `%` followed by a character other than one of the above (including a lone `%` at the very end of the format string) is left in the output unchanged, so a typo like `%x` shows up as `%x` in the log rather than silently eating a character. To print a literal `%t`, `%a`, etc. rather than have it expanded, escape the `%` as `%%`, e.g. a format of `%%t = %t` logs a line like `%t = 1735689600000`. This mirrors the common `printf`/`strftime`-style convention of doubling `%` to escape it, which is why that convention (rather than a separate escape character) was used here.
+
+### Archive name availability
+
+`%a` requires two things: the hooked call must yield a file handle (`SFileOpenFile`/`SFileOpenFileEx` do; `SFileLoadFile`, `SFileLoadFileEx`, `SBmpLoadImage`, `SBmpAllocLoadImage` and `SVidPlayBegin` do not, since none of them return an `HSFILE`), and Storm.dll must export `SFileGetArchiveName` - which it does **not** when targeting Diablo I. If either condition isn't met, `%a` simply expands to an empty string rather than causing an error.
+
+### Call parameters (`%p` and `%P`)
+
+The split is purely mechanical, by C parameter type: every argument to the hooked call that **isn't** a pointer goes into `%p`; every argument that **is** a pointer (including Windows `HANDLE`s, which are pointer-typed) goes into `%P`. Nothing is left out and nothing is curated for "interestingness" - if you only want part of this, combine `%p`/`%P` with your own format text, or omit whichever one you don't need.
+
+For a pointer parameter, `%P` always logs its raw address (or `(null)`). For some of those pointers it also logs the value found at that address, shown as `(deref=...)`, when doing so is both safe and meaningful:
+
+- **Safe** means the call already succeeded and the pointer is a well-understood, fixed-size output slot (a `DWORD*` or `HANDLE*` "give me a value back" parameter) - not a buffer of unknown/arbitrary length, not a parameter whose validity we can't establish, and not something that isn't actually data (a callback/function pointer).
+- **Meaningful** means the dereferenced value is itself a plain, short, printable thing (a number or a handle) rather than something that would need to be dumped as raw/binary data (pixel buffers, a 256-entry palette, an `OVERLAPPED` structure).
+
+Where a pointer-to-pointer output parameter is involved (e.g. `SFileLoadFile`'s `lplpFileData`), exactly one level of dereference is shown - the resulting buffer's address - never the buffer's contents.
+
+| Call | `%p` (non-pointer parameters) | `%P` (pointer parameters) |
+|------|-------------------------------|----------------------------|
+| `SFileOpenFile` | *(none - every parameter is a pointer)* | `lpFileName`; `hFile` (deref: the resulting handle) |
+| `SFileOpenFileEx` | `dwSearchScope` | `hMpq`; `szFileName`; `phFile` (deref: the resulting handle) |
+| `SFileLoadFile` | `dwFlags1`, `dwFlags2` | `lpFileName`; `lplpFileData` (deref: the loaded buffer's address); `lpdwFileSize` (deref: the loaded size) |
+| `SFileLoadFileEx` | `dwFlags1`, `dwFlags2` | `hMpq`; `lpFileName`; `lplpFileData` (deref: the loaded buffer's address); `lpdwFileSize` (deref: the loaded size); `lpOverlapped` (address only - opaque structure) |
+| `SBmpLoadImage` | `dwBitsSize` (the caller's destination-buffer capacity) | `lpFileName`; `lpPalette` (address only - a 256-entry array, not a scalar); `lpBits` (address only - raw pixel buffer); `lpdwWidth`, `lpdwHeight`, `lpdwBpp` (each deref'd only if the caller passed a non-`NULL` pointer for it) |
+| `SBmpAllocLoadImage` | *(none - every parameter is a pointer)* | `lpFileName`; `lpPalette` (address only); `lplpBits` (deref: the allocated buffer's address); `lpdwWidth`, `lpdwHeight`, `lpdwBpp`, `lpdwSize` (each deref'd only if the caller passed a non-`NULL` pointer for it); `lpAllocProc` (address only - a callback function pointer) |
+| `SVidPlayBegin` | `a2`, `flags` | `filename`; `a3`, `a4`, `a5` (address only - `a2`-`a5` are undocumented/unnamed in this reverse-engineered signature, and `a3`-`a5` are pointers of unknown validity/lifetime, so they're never dereferenced); `video` (deref: the resulting handle, following the same "give me a handle back" idiom as `hFile`/`phFile`) |
+
+### Example
+
+A format of:
+
+```
+%t %a: %f (%c, %p | %P)
+```
+
+produces lines like:
+
+```
+1735689600123 Broodat.mpq: unit\protoss\lshield.los (SFileOpenFileEx, dwSearchScope=0x0 | hMpq=(null), szFileName=0x28fe30, phFile=0x28fe1c (deref=0x1f4))
+1735689600456 patch_rt.mpq: rez\stat_txt.tbl (SFileOpenFile,  | lpFileName=0x28fe30, hFile=0x28fe1c (deref=0x1a8))
+1735689601001 : glue\palette.pcx (SBmpLoadImage, dwBitsSize=64000 | lpFileName=0x28fe30, lpPalette=0x28fe40, lpBits=0xa10000, lpdwWidth=0x28fe10 (deref=320), lpdwHeight=0x28fe14 (deref=200), lpdwBpp=0x28fe18 (deref=8))
+```
+
+(Note the empty `%a` for Diablo I or for calls that don't provide an archive name, and the empty `%p` for `SFileOpenFile` since all of its parameters are pointers. Addresses shown above are illustrative, not real.)
+
 ## Output
 
-The log file contains one filename per line:
+With the default log format (`%f`), the log file contains one filename per line:
+
+```
+unit\protoss\lshield.los
+scripts\iscript.bin
+arr\sprites.dat
+rez\stat_txt.tbl
+scripts\aiscript.bin
+arr\units.dat
+arr\flingy.dat
+arr\weapons.dat
+unit\cmdbtns\cmdicons.grp
+tileset\badlands-nc.wpe
+...
+```
+
+Using a format of `%a: %f` instead, output looks like:
 
 ```
 Broodat.mpq: unit\protoss\lshield.los

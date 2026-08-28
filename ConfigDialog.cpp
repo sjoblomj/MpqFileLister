@@ -42,7 +42,12 @@ static const char* UNIQUE_CHECKBOX_TEXT = "Log unique filenames only (no duplica
 static const char* LOG_FORMAT_GROUPBOX_TEXT = "Log format";
 static const char* LOG_FORMAT_HELP_TEXT =
     "Enter a format for each logged line, using these placeholders:\r\n"
-    "%t = timestamp (milliseconds since epoch, 1970-01-01)\r\n"
+    "%t = timestamp, milliseconds since epoch (1970-01-01)\r\n"
+    "%T = timestamp, ISO-8601, UTC, millisecond precision, e.g. 2026-08-27T14:03:21.123Z\r\n"
+    "%t{...} = timestamp, custom strftime-style format, e.g. %t{%Y-%m-%d %H:%M:%S}. "
+    "Use %L inside the braces for milliseconds. Unsupported by this format: sub-second "
+    "specifiers other than %L, and any strftime specifier this CRT doesn't implement "
+    "(if invalid, the raw %t{...} text is shown instead of a blank timestamp)\r\n"
     "%a = MPQ archive name (not available for every call, and never available "
     "when targeting Diablo I)\r\n"
     "%f = filename\r\n"
@@ -50,9 +55,9 @@ static const char* LOG_FORMAT_HELP_TEXT =
     "%p = that call's non-pointer parameters, e.g. dwSearchScope for SFileOpenFileEx\r\n"
     "%P = that call's pointer parameters, as addresses (plus the value pointed to, "
     "where that's known to be safe to read), e.g. phFile for SFileOpenFileEx\r\n"
-    "%% = a literal '%' character\r\n"
-    "See the README for exactly what %p and %P include for each call.\r\n"
-    "Example: \"%t %a: %f (%c, %p, %P)\"";
+    "%%, %{, %} = a literal '%', '{' or '}' character\r\n"
+    "See the README for exactly what %p, %P and %t{...} include/support.\r\n"
+    "Example: \"%T %a: %f (%c, %p, %P)\"";
 static const char* LOG_FILENAME_GROUPBOX_TEXT = "Log file name";
 static const char* PATH_LABEL_TEXT = "Enter filename only (not full path) to create the file in the game's directory";
 static const char* BROWSE_BUTTON_TEXT = "&Browse...";

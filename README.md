@@ -39,7 +39,7 @@ The plugin also resolves (but does not hook) `SFileGetFileArchive` and `SFileGet
 Click "Configure" in MPQDraft to open the settings dialog:
 
 - **Log unique filenames only**: When enabled, each filename is logged only once (no duplicates). Uniqueness is based on the archive name and filename, independent of whatever log format you choose - it is not affected by `%t`, `%c`, `%p` or `%P` varying between accesses. When disabled, every access is logged, even repeated ones.
-- **Log format**: A free-form text template for each logged line - see [Log format](#log-format) below.
+- **Log format**: A free-form text template for each logged line, including how timestamps are rendered - see [Log format](#log-format) below.
 - **Log file name**: The name of the log file. If you enter just a filename (e.g., `FileLog.txt`), it will be created in the game's directory. You can also specify an absolute path.
 - **Target game**: Whether to target Diablo I, or later games.
 
@@ -51,17 +51,38 @@ The log format is a template applied to every logged call. Any character is prin
 
 | Placeholder | Expands to |
 |-------------|------------|
-| `%t` | Timestamp, in milliseconds since epoch (1970-01-01) |
+| `%t` | Timestamp, milliseconds since epoch (1970-01-01), e.g. `1735689600123` |
+| `%T` | Timestamp, ISO-8601, UTC, millisecond precision, e.g. `2026-08-27T14:03:21.123Z` |
+| `%t{...}` | Timestamp, custom `strftime`-style format - see [Custom timestamp formats](#custom-timestamp-formats-t) below |
 | `%a` | The MPQ archive name. Empty if unavailable - see caveats below |
 | `%f` | The filename that was passed to the hooked call |
 | `%c` | The name of the Storm.dll call that was made, e.g. `SFileOpenFileEx` |
 | `%p` | That call's **non-pointer** parameters - see [Call parameters](#call-parameters-p-and-p) below |
 | `%P` | That call's **pointer** parameters - see [Call parameters](#call-parameters-p-and-p) below |
-| `%%` | A literal `%` character |
+| `%%`, `%{`, `%}` | A literal `%`, `{` or `}` character |
 
-The default format is `%f` (filename only), matching the plugin's previous fixed behavior.
+The default format is `%f` (filename only).
 
-Any `%` followed by a character other than one of the above (including a lone `%` at the very end of the format string) is left in the output unchanged, so a typo like `%x` shows up as `%x` in the log rather than silently eating a character. To print a literal `%t`, `%a`, etc. rather than have it expanded, escape the `%` as `%%`, e.g. a format of `%%t = %t` logs a line like `%t = 1735689600000`. This mirrors the common `printf`/`strftime`-style convention of doubling `%` to escape it, which is why that convention (rather than a separate escape character) was used here.
+Any `%` followed by a character other than one of the above (including a lone `%` at the very end of the format string) is left in the output unchanged, so a typo like `%x` shows up as `%x` in the log rather than silently eating a character. To print a literal `%t`, `%a`, etc. rather than have it expanded, escape the `%` as `%%`, e.g. a format of `%%t = %t` logs a line like `%t = 1735689600000`. This mirrors the common `printf`/`strftime`-style convention of doubling `%` to escape it, which is why that convention was used here - and it's why `{` and `}` get the same treatment (`%{`/`%}`) rather than a different escape mechanism of their own.
+
+### Custom timestamp formats (`%t{...}`)
+
+`%t` and `%T` cover the two most common needs (a compact sortable number, and a human-readable standard timestamp) without any setup. For anything else, `%t{...}` runs the text between the braces through the C runtime's `strftime`, with one addition: `%L` inside the braces expands to the millisecond fraction, zero-padded to 3 digits (`strftime` itself has no notion of sub-second precision). For example:
+
+```
+%t{%H:%M:%S.%L}             ->  14:03:21.123
+%t{%A, %B %d}               ->  Thursday, August 27
+%t{%Y-%m-%dT%H:%M:%S.%L}Z   ->  2026-08-27T14:03:21.123Z   (equivalent to %T)
+```
+
+A few things worth knowing before relying on this:
+
+- **Braces only mean anything right after `%t`.** A `{` or `}` anywhere else in your format is already just a literal character - no escaping needed. Escaping (`%{`/`%}`) is only needed for a literal brace immediately after `%t` (to stop it being read as the start of a sub-format), or for a literal `}` *inside* a sub-format's braces (to stop it being read as the closing brace) - `%t{%Y-%m-%d%}}` renders as `2026-08-27}`.
+- **Only whatever `strftime` your C runtime actually implements is available**. On the toolchain this plugin is built with, the supported specifiers are `%a %A %b %B %c %d %H %I %j %m %M %p %S %U %w %W %x %X %y %Y %z %Z`. Stick to the tested set above, or the fixed `%t`/`%T` placeholders.
+- **`%z`/`%Z` are not UTC-aware.** They print the *host machine's local* timezone name, regardless of the fact that the rest of the values (`%H`, `%M`, `%S`, etc.) are computed in UTC. Using them in a custom format will produce misleading output (e.g. a UTC hour next to a non-UTC zone label). Avoid `%z`/`%Z` in `%t{...}`.
+- **Any unsupported or invalid specifier fails the entire sub-format, not just that token.** A single unrecognized specifier anywhere in the string makes the whole call return nothing. Rather than silently produce a blank timestamp, an invalid `%t{...}` renders as its own unresolved source text (e.g. `%t{%Q}` if `%Q` isn't a real specifier) - the mistake stays visible in the log instead of disappearing.
+- **`%t{...}` only has access to time.** The outer placeholders (`%f`, `%a`, `%c`, `%p`, `%P`) aren't available inside the braces - that scope is handed entirely to `strftime`, which only knows about dates and times.
+- **Locale matters here in a way it doesn't for `%t`/`%T`.** Specifiers like `%a`/`%A`/`%b`/`%B`/`%c`/`%x`/`%X` render using whatever locale the game process happens to be running under, so weekday/month names may not always come out in English. `%t` and `%T` are unaffected, since both are built by hand rather than through `strftime`.
 
 ### Archive name availability
 

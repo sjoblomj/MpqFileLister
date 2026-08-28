@@ -18,7 +18,7 @@ enum class TargetGame
 };
 
 // Default log line format - see FormatLogEntry() in MpqFileLister.cpp for the
-// placeholder syntax (%t, %a, %f, %c, %p, %P, %%).
+// placeholder syntax (%t, %T, %t{...}, %a, %f, %c, %p, %P, %%, %{, %}).
 extern const char* const DEFAULT_LOG_FORMAT;
 
 extern bool g_logUniqueOnly;

@@ -254,9 +254,7 @@ static void HandleOkButton(HWND hDlg)
         g_targetGame = TargetGame::LATER;
 
     // Save path
-    char path[MAX_PATH];
-    GetDlgItemTextA(hDlg, IDC_PATH_EDIT, path, MAX_PATH);
-    g_logFileName = path;
+    g_logFileName = GetDlgItemTextDynamic(hDlg, IDC_PATH_EDIT);
 
     // Save to the config file
     SaveConfig();

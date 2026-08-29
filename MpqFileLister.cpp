@@ -710,6 +710,10 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSBmpAllocLoadImage(
     return result;
 }
 
+// MPQDraft only ever calls this once per patched process (from LoadPlugins() in its
+// injected DLL) - it never re-initializes a plugin after calling TerminatePlugin(),
+// so s_logFile.open() below doesn't need to guard against being called on an
+// already-open stream. See TerminatePlugin() for why.
 BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftServer)
 {
     (void)lpMPQDraftServer;
@@ -953,6 +957,13 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
     return TRUE;
 }
 
+// Does not revert the PatchImportEntry hooks installed in InitializePlugin(), and
+// doesn't need to: MPQDraft's own source (src/dll/MPQDraftDLL.cpp) documents that
+// it deliberately never unloads plugin DLLs mid-session, since unpatching a hooked
+// function while another thread might still call it is unsafe - the call that
+// would do so (UnloadPlugins(), invoked from PatchExitProcess) is commented out
+// there on purpose. This plugin's TerminatePlugin() only ever runs once, from its
+// own DllMain's DLL_PROCESS_DETACH, as the process is already exiting.
 BOOL WINAPI CMpqFileListerPlugin::TerminatePlugin()
 {
     if (!m_bInitialized)

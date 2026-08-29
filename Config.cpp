@@ -3,6 +3,7 @@
 */
 
 #include "Config.h"
+#include "Utils.h"
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -20,11 +21,9 @@ static std::string g_configFilePath;
 
 void InitConfigPath(HMODULE hModule)
 {
-    std::string dllPath(MAX_PATH, '\0');
-    DWORD len = GetModuleFileNameA(hModule, dllPath.data(), MAX_PATH);
-    if (len > 0)
+    std::string dllPath = GetModulePathSafe(hModule);
+    if (!dllPath.empty())
     {
-        dllPath.resize(len);
         std::filesystem::path p(dllPath);
         g_configFilePath = (p.parent_path() / "MpqFileLister.ini").string();
     }
@@ -38,6 +37,16 @@ void LoadConfig()
     std::ifstream file(g_configFilePath);
     if (!file.is_open())
         return;
+
+    // Skip a UTF-8 byte-order mark if present (e.g. added by Notepad when saving),
+    // so the first key=value line's prefix match below doesn't silently fail.
+    if (file.peek() == 0xEF)
+    {
+        char bom[3];
+        file.read(bom, 3);
+        if (static_cast<unsigned char>(bom[1]) != 0xBB || static_cast<unsigned char>(bom[2]) != 0xBF)
+            file.seekg(0);
+    }
 
     std::string line;
     while (std::getline(file, line))

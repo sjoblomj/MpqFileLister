@@ -18,6 +18,7 @@ set(SOURCES
     Config.cpp
     ConfigDialog.cpp
     QHookAPI.cpp
+    Utils.cpp
 )
 
 set(HEADERS
@@ -26,6 +27,7 @@ set(HEADERS
     ConfigDialog.h
     MPQDraftPlugin.h
     QHookAPI.h
+    Utils.h
 )
 
 # Create the DLL

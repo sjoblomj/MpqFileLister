@@ -5,6 +5,7 @@
 #include "Config.h"
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
 
 // === Configuration variables ===
 const char* const DEFAULT_LOG_FORMAT = "%f";
@@ -51,9 +52,16 @@ void LoadConfig()
         }
         else if (line.rfind("TargetGame=", 0) == 0)
         {
-            int gameValue = std::stoi(line.substr(11));
-            if (gameValue >= 0 && gameValue <= 1)
-                g_targetGame = static_cast<TargetGame>(gameValue);
+            try
+            {
+                int gameValue = std::stoi(line.substr(11));
+                if (gameValue >= 0 && gameValue <= 1)
+                    g_targetGame = static_cast<TargetGame>(gameValue);
+            }
+            catch (const std::exception&)
+            {
+                // Malformed value in the ini file - keep the current/default TargetGame
+            }
         }
         else if (line.rfind("LogFileName=", 0) == 0)
         {

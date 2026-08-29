@@ -7,6 +7,7 @@
 #include "QHookAPI.h"
 #include "Config.h"
 #include "ConfigDialog.h"
+#include "Utils.h"
 #include <filesystem>
 #include <cstring>
 #include <unordered_set>
@@ -182,19 +183,6 @@ BOOL WINAPI CMpqFileListerPlugin::GetModules(void* lpPluginModules, DWORD* lpnNu
     // No additional modules needed
     *lpnNumModules = 0;
     return TRUE;
-}
-
-// Joins "key=value" style strings into a single ", "-separated string, e.g. for %p/%P
-static std::string JoinParts(const std::vector<std::string>& parts)
-{
-    std::string result;
-    for (size_t i = 0; i < parts.size(); ++i)
-    {
-        if (i > 0)
-            result += ", ";
-        result += parts[i];
-    }
-    return result;
 }
 
 // Formats a raw pointer value for the log, e.g. "0x28fe1c", or "(null)".
@@ -731,11 +719,9 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
     }
     else
     {
-        std::string exePath(MAX_PATH, '\0');
-        DWORD len = GetModuleFileNameA(nullptr, exePath.data(), MAX_PATH);
-        if (len > 0)
+        std::string exePath = GetModulePathSafe(nullptr);
+        if (!exePath.empty())
         {
-            exePath.resize(len);
             std::filesystem::path gamePath(exePath);
             s_logFilePath = (gamePath.parent_path() / g_logFileName).string();
         }

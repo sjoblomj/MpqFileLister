@@ -38,7 +38,7 @@ The plugin also resolves (but does not hook) `SFileGetFileArchive` and `SFileGet
 
 Click "Configure" in MPQDraft to open the settings dialog:
 
-- **Log unique filenames only**: When enabled, each filename is logged only once (no duplicates). Uniqueness is based on the archive name and filename, independent of whatever log format you choose - it is not affected by `%t`, `%c`, `%p` or `%P` varying between accesses. When disabled, every access is logged, even repeated ones.
+- **Log unique filenames only**: When enabled, each filename is logged only once (no duplicates). Uniqueness is based on the filename, plus the archive name if your log format includes `%a` - if it doesn't, identically named files from different archives are treated as the same entry, matching what the log actually shows you. Either way, this is unaffected by `%t`, `%T`, `%t{...}`, `%c`, `%p` or `%P` varying between accesses. When disabled, every access is logged, even repeated ones.
 - **Log format**: A free-form text template for each logged line, including how timestamps are rendered - see [Log format](#log-format) below.
 - **Log file name**: The name of the log file. If you enter just a filename (e.g., `FileLog.txt`), it will be created in the game's directory. You can also specify an absolute path.
 - **Target game**: Whether to target Diablo I, or later games.

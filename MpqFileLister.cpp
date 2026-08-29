@@ -454,7 +454,12 @@ void CMpqFileListerPlugin::LogFileAccess(const char* fileName, HANDLE fileHandle
         }
     }
 
-    // Build the uniqueness key (independent of the chosen format/timestamp) for duplicate detection
+    // Build the uniqueness key for duplicate detection. This mirrors what the log
+    // format actually distinguishes: the key always excludes the timestamp (so
+    // %t/%T/%t{...} varying between accesses doesn't defeat deduplication), and
+    // includes the archive name only when the format requests it via %a - if the
+    // user isn't asking to see which archive a file came from, two identically
+    // named files from different archives are correctly treated as the same entry.
     std::string uniqueKey;
     if (!archiveName.empty())
         uniqueKey = archiveName + ": " + fileName;

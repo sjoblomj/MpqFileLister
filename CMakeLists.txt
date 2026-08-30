@@ -15,6 +15,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Source files
 set(SOURCES
     MpqFileLister.cpp
+    Hooks.cpp
+    LogFormat.cpp
     Config.cpp
     ConfigDialog.cpp
     QHookAPI.cpp
@@ -23,6 +25,7 @@ set(SOURCES
 
 set(HEADERS
     MpqFileLister.h
+    LogFormat.h
     Config.h
     ConfigDialog.h
     MPQDraftPlugin.h

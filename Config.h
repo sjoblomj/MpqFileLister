@@ -5,7 +5,6 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <windows.h>
 #include <string>
 
 // === Configuration variables ===
@@ -28,8 +27,10 @@ extern std::string g_logFileName;
 
 // === Configuration functions ===
 
-// Initialize the config file path based on the DLL location
-void InitConfigPath(HMODULE hModule);
+// Initialize the config file path based on the DLL location.
+// hModule is an opaque module handle (an HMODULE, passed as void* so this header
+// doesn't need <windows.h>).
+void InitConfigPath(void* hModule);
 
 // Load configuration from the INI file
 void LoadConfig();

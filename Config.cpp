@@ -19,7 +19,7 @@ std::string g_logFileName = "MpqFileLister_FileLog.txt";
 // Path to the config file (next to the plugin DLL)
 static std::string g_configFilePath;
 
-void InitConfigPath(HMODULE hModule)
+void InitConfigPath(void* hModule)
 {
     std::string dllPath = GetModulePathSafe(hModule);
     if (!dllPath.empty())

@@ -4,12 +4,28 @@
 
 #include "Utils.h"
 
-std::string GetModulePathSafe(HMODULE hModule)
+// Declared by hand instead of including <windows.h>, to keep that header's large
+// surface area (and macros like min/max) out of this otherwise platform-agnostic
+// file. This is an ordinary declaration for a function implemented in kernel32.dll;
+// the compiler doesn't care that the declaration didn't come from windows.h, as
+// long as it's ABI-correct - which this is (HMODULE is void*, LPSTR is char*, and
+// DWORD is a 32-bit unsigned long on Windows, on both 32- and 64-bit builds).
+extern "C" __declspec(dllimport) unsigned long __stdcall GetModuleFileNameA(
+    void* hModule, char* lpFilename, unsigned long nSize);
+
+namespace
 {
-    std::string path(MAX_PATH, '\0');
+    // Matches the historical Win32 MAX_PATH (260), without pulling in <windows.h> for it.
+    constexpr size_t kInitialPathBufferSize = 260;
+    constexpr size_t kMaxPathBufferSize = 32768;
+}
+
+std::string GetModulePathSafe(void* hModule)
+{
+    std::string path(kInitialPathBufferSize, '\0');
     for (;;)
     {
-        DWORD len = GetModuleFileNameA(hModule, path.data(), static_cast<DWORD>(path.size()));
+        unsigned long len = GetModuleFileNameA(hModule, path.data(), static_cast<unsigned long>(path.size()));
         if (len == 0)
             return "";
         if (len < path.size())
@@ -17,7 +33,7 @@ std::string GetModulePathSafe(HMODULE hModule)
             path.resize(len);
             return path;
         }
-        if (path.size() >= 32768)
+        if (path.size() >= kMaxPathBufferSize)
             return ""; // give up rather than growing without bound
         path.resize(path.size() * 2);
     }

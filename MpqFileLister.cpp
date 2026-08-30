@@ -9,30 +9,19 @@
 #include "ConfigDialog.h"
 #include "Utils.h"
 #include "LogFormat.h"
+#include "Hooks.h"
 #include <filesystem>
 #include <cstring>
 #include <unordered_set>
+#include <vector>
 
-// Storm.dll ordinals
-static constexpr uint32_t SFILEOPENFILE_D1_ORDINAL       = 0x4E;    // 78
-static constexpr uint32_t SFILEOPENFILEEX_D1_ORDINAL     = 0x4F;    // 79
+// SFileGetFileArchive/SFileGetArchiveName aren't hooked (nothing gets patched) -
+// they're only resolved so LogFileAccess() can look up which archive a file came
+// from, so they stay here rather than in Hooks.h/cpp alongside the actual hooks.
 static constexpr uint32_t SFILEGETFILEARCHIVE_D1_ORDINAL = 0x4B;    // 75
 static constexpr uint32_t SFILEGETARCHIVENAME_D1_ORDINAL = 0x0;     // not exported by D1's Storm.dll
-static constexpr uint32_t SVIDPLAYBEGIN_D1_ORDINAL       = 0x9D;    // 157
-static constexpr uint32_t SFILEOPENFILE_ORDINAL          = 0x10B;   // 267
-static constexpr uint32_t SFILEOPENFILEEX_ORDINAL        = 0x10C;   // 268
 static constexpr uint32_t SFILEGETFILEARCHIVE_ORDINAL    = 0x108;   // 264
 static constexpr uint32_t SFILEGETARCHIVENAME_ORDINAL    = 0x113;   // 275
-static constexpr uint32_t SVIDPLAYBEGIN_ORDINAL          = 0x1C6;   // 454
-
-static constexpr uint32_t SFILELOADFILE_D1_ORDINAL       = 0x0;     // not exported by D1's Storm.dll
-static constexpr uint32_t SFILELOADFILEEX_D1_ORDINAL     = 0x0;     // not exported by D1's Storm.dll
-static constexpr uint32_t SBMPLOADIMAGE_D1_ORDINAL       = 0x8;     // 8
-static constexpr uint32_t SBMPALLOCLOADIMAGE_D1_ORDINAL  = 0x0;     // not exported by D1's Storm.dll
-static constexpr uint32_t SFILELOADFILE_ORDINAL          = 0x117;   // 279
-static constexpr uint32_t SFILELOADFILEEX_ORDINAL        = 0x119;   // 281
-static constexpr uint32_t SBMPLOADIMAGE_ORDINAL          = 0x143;   // 323
-static constexpr uint32_t SBMPALLOCLOADIMAGE_ORDINAL     = 0x145;   // 325
 
 // Function pointer types for archive name lookup
 // BOOL SFileGetFileArchive(HANDLE hFile, HANDLE* phArchive)
@@ -47,13 +36,6 @@ static SFileGetArchiveNamePtr s_SFileGetArchiveName = nullptr;
 CMpqFileListerPlugin g_MpqFileLister;
 
 // Static member initialization
-SFileOpenFilePtr CMpqFileListerPlugin::s_OriginalSFileOpenFile = nullptr;
-SFileOpenFileExPtr CMpqFileListerPlugin::s_OriginalSFileOpenFileEx = nullptr;
-SVidPlayBeginPtr CMpqFileListerPlugin::s_OriginalSVidPlayBegin = nullptr;
-SFileLoadFilePtr CMpqFileListerPlugin::s_OriginalSFileLoadFile = nullptr;
-SFileLoadFileExPtr CMpqFileListerPlugin::s_OriginalSFileLoadFileEx = nullptr;
-SBmpLoadImagePtr CMpqFileListerPlugin::s_OriginalSBmpLoadImage = nullptr;
-SBmpAllocLoadImagePtr CMpqFileListerPlugin::s_OriginalSBmpAllocLoadImage = nullptr;
 std::ofstream CMpqFileListerPlugin::s_logFile;
 std::mutex CMpqFileListerPlugin::s_logMutex;
 std::string CMpqFileListerPlugin::s_logFilePath;
@@ -295,104 +277,49 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
         return TRUE;  // Return TRUE to not abort the patch
     }
 
-    // Select ordinals based on target game
-    uint32_t sFileOpenFileOrdinal;
-    uint32_t sFileOpenFileExOrdinal;
-    uint32_t sVidPlayBeginOrdinal;
-    uint32_t sFileGetFileArchiveOrdinal;
-    uint32_t sFileGetArchiveNameOrdinal;
-    uint32_t sFileLoadFileOrdinal;
-    uint32_t sFileLoadFileExOrdinal;
-    uint32_t sBmpLoadImageOrdinal;
-    uint32_t sBmpAllocLoadImageOrdinal;
+    // All knowledge of which Storm.dll functions get hooked - their names, ordinals
+    // and replacement functions - lives in Hooks.cpp; this function only knows how
+    // to resolve and patch whatever entries it's handed.
+    const std::vector<HookEntry>& hooks = GetHookEntries();
 
-    if (g_targetGame == TargetGame::DIABLO_1)
+    // Resolve the original function pointers using ordinals. An ordinal of 0 means
+    // the function is known not to exist for the selected target (e.g. SFileLoadFile
+    // on Diablo I) - resolution and warnings are skipped for those rather than
+    // treated as an unexpected lookup failure.
+    bool anyHooked = false;
+    for (const HookEntry& hook : hooks)
     {
-        sFileOpenFileOrdinal = SFILEOPENFILE_D1_ORDINAL;
-        sFileOpenFileExOrdinal = SFILEOPENFILEEX_D1_ORDINAL;
-        sVidPlayBeginOrdinal = SVIDPLAYBEGIN_D1_ORDINAL;
-        sFileGetFileArchiveOrdinal = SFILEGETFILEARCHIVE_D1_ORDINAL;
-        sFileGetArchiveNameOrdinal = SFILEGETARCHIVENAME_D1_ORDINAL;
-        sFileLoadFileOrdinal = SFILELOADFILE_D1_ORDINAL;
-        sFileLoadFileExOrdinal = SFILELOADFILEEX_D1_ORDINAL;
-        sBmpLoadImageOrdinal = SBMPLOADIMAGE_D1_ORDINAL;
-        sBmpAllocLoadImageOrdinal = SBMPALLOCLOADIMAGE_D1_ORDINAL;
-    }
-    else // TargetGame::LATER
-    {
-        sFileOpenFileOrdinal = SFILEOPENFILE_ORDINAL;
-        sFileOpenFileExOrdinal = SFILEOPENFILEEX_ORDINAL;
-        sVidPlayBeginOrdinal = SVIDPLAYBEGIN_ORDINAL;
-        sFileGetFileArchiveOrdinal = SFILEGETFILEARCHIVE_ORDINAL;
-        sFileGetArchiveNameOrdinal = SFILEGETARCHIVENAME_ORDINAL;
-        sFileLoadFileOrdinal = SFILELOADFILE_ORDINAL;
-        sFileLoadFileExOrdinal = SFILELOADFILEEX_ORDINAL;
-        sBmpLoadImageOrdinal = SBMPLOADIMAGE_ORDINAL;
-        sBmpAllocLoadImageOrdinal = SBMPALLOCLOADIMAGE_ORDINAL;
+        uint32_t ordinal = (g_targetGame == TargetGame::DIABLO_1) ? hook.d1Ordinal : hook.laterOrdinal;
+        if (!ordinal)
+            continue;
+
+        // Use reinterpret_cast via void* to avoid -Wcast-function-type warning
+        void* original = reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)ordinal));
+        *hook.originalPtrSlot = original;
+
+        if (!original)
+        {
+            if (s_logFile.is_open())
+                s_logFile << "WARNING: " << hook.name << " not found in Storm.dll - not hooked\n";
+            continue;
+        }
+
+        anyHooked = true;
     }
 
-    // Get the original function pointers using ordinals
-    // Use reinterpret_cast via void* to avoid -Wcast-function-type warning
-    s_OriginalSFileOpenFile = reinterpret_cast<SFileOpenFilePtr>(
-        reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)sFileOpenFileOrdinal)));
-
-    s_OriginalSFileOpenFileEx = reinterpret_cast<SFileOpenFileExPtr>(
-        reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)sFileOpenFileExOrdinal)));
-
-    s_OriginalSVidPlayBegin = reinterpret_cast<SVidPlayBeginPtr>(
-        reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)sVidPlayBeginOrdinal)));
-
-    // An ordinal of 0 means the function is known not to exist for the selected
-    // target (e.g. SFileLoadFile/SFileLoadFileEx/SBmpAllocLoadImage on Diablo I) -
-    // skip resolving and warning about those rather than treating them as an
-    // unexpected lookup failure.
-    if (sFileLoadFileOrdinal)
-    {
-        s_OriginalSFileLoadFile = reinterpret_cast<SFileLoadFilePtr>(
-            reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)sFileLoadFileOrdinal)));
-        if (!s_OriginalSFileLoadFile && s_logFile.is_open())
-            s_logFile << "WARNING: SFileLoadFile not found in Storm.dll - not hooked\n";
-    }
-
-    if (sFileLoadFileExOrdinal)
-    {
-        s_OriginalSFileLoadFileEx = reinterpret_cast<SFileLoadFileExPtr>(
-            reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)sFileLoadFileExOrdinal)));
-        if (!s_OriginalSFileLoadFileEx && s_logFile.is_open())
-            s_logFile << "WARNING: SFileLoadFileEx not found in Storm.dll - not hooked\n";
-    }
-
-    if (sBmpLoadImageOrdinal)
-    {
-        s_OriginalSBmpLoadImage = reinterpret_cast<SBmpLoadImagePtr>(
-            reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)sBmpLoadImageOrdinal)));
-        if (!s_OriginalSBmpLoadImage && s_logFile.is_open())
-            s_logFile << "WARNING: SBmpLoadImage not found in Storm.dll - not hooked\n";
-    }
-
-    if (sBmpAllocLoadImageOrdinal)
-    {
-        s_OriginalSBmpAllocLoadImage = reinterpret_cast<SBmpAllocLoadImagePtr>(
-            reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)sBmpAllocLoadImageOrdinal)));
-        if (!s_OriginalSBmpAllocLoadImage && s_logFile.is_open())
-            s_logFile << "WARNING: SBmpAllocLoadImage not found in Storm.dll - not hooked\n";
-    }
-
-    if (!s_OriginalSFileOpenFile && !s_OriginalSFileOpenFileEx && !s_OriginalSVidPlayBegin &&
-        !s_OriginalSFileLoadFile && !s_OriginalSFileLoadFileEx &&
-        !s_OriginalSBmpLoadImage && !s_OriginalSBmpAllocLoadImage)
+    if (!anyHooked)
     {
         if (s_logFile.is_open())
-        {
-            s_logFile << "ERROR: None of the SFileOpenFile/SFileOpenFileEx/SVidPlayBegin/"
-                         "SFileLoadFile/SFileLoadFileEx/SBmpLoadImage/SBmpAllocLoadImage "
-                         "functions were found in Storm.dll\n";
-        }
+            s_logFile << "ERROR: None of the " << hooks.size() << " configured Storm.dll functions were found\n";
         return TRUE;  // Return TRUE to not abort the patch
     }
 
     // Get SFileGetFileArchive and SFileGetArchiveName for logging which MPQ files come from
     // (optional - e.g. SFileGetArchiveName does not exist on Diablo I's Storm.dll, ordinal 0)
+    bool isD1 = (g_targetGame == TargetGame::DIABLO_1);
+    uint32_t sFileGetFileArchiveOrdinal = isD1 ? SFILEGETFILEARCHIVE_D1_ORDINAL : SFILEGETFILEARCHIVE_ORDINAL;
+    uint32_t sFileGetArchiveNameOrdinal = isD1 ? SFILEGETARCHIVENAME_D1_ORDINAL : SFILEGETARCHIVENAME_ORDINAL;
+
     s_SFileGetFileArchive = reinterpret_cast<SFileGetFileArchivePtr>(
         reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)sFileGetFileArchiveOrdinal)));
     if (sFileGetArchiveNameOrdinal)
@@ -402,82 +329,18 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
     }
 
     // Patch the import table to redirect calls to our hooks
-    // Use reinterpret_cast via void* to avoid -Wcast-function-type warning
     HMODULE hHostProcess = GetModuleHandle(nullptr);
-
-    if (s_OriginalSFileOpenFile)
+    for (const HookEntry& hook : hooks)
     {
+        void* original = *hook.originalPtrSlot;
+        if (!original)
+            continue;
+
         PatchImportEntry(
             hHostProcess,
             "Storm.dll",
-            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(s_OriginalSFileOpenFile)),
-            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSFileOpenFile)),
-            TRUE  // Recursive - patch all loaded modules
-        );
-    }
-
-    if (s_OriginalSFileOpenFileEx)
-    {
-        PatchImportEntry(
-            hHostProcess,
-            "Storm.dll",
-            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(s_OriginalSFileOpenFileEx)),
-            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSFileOpenFileEx)),
-            TRUE  // Recursive - patch all loaded modules
-        );
-    }
-
-    if (s_OriginalSVidPlayBegin)
-    {
-        PatchImportEntry(
-            hHostProcess,
-            "Storm.dll",
-            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(s_OriginalSVidPlayBegin)),
-            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSVidPlayBegin)),
-            TRUE  // Recursive - patch all loaded modules
-        );
-    }
-
-    if (s_OriginalSFileLoadFile)
-    {
-        PatchImportEntry(
-            hHostProcess,
-            "Storm.dll",
-            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(s_OriginalSFileLoadFile)),
-            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSFileLoadFile)),
-            TRUE  // Recursive - patch all loaded modules
-        );
-    }
-
-    if (s_OriginalSFileLoadFileEx)
-    {
-        PatchImportEntry(
-            hHostProcess,
-            "Storm.dll",
-            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(s_OriginalSFileLoadFileEx)),
-            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSFileLoadFileEx)),
-            TRUE  // Recursive - patch all loaded modules
-        );
-    }
-
-    if (s_OriginalSBmpLoadImage)
-    {
-        PatchImportEntry(
-            hHostProcess,
-            "Storm.dll",
-            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(s_OriginalSBmpLoadImage)),
-            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSBmpLoadImage)),
-            TRUE  // Recursive - patch all loaded modules
-        );
-    }
-
-    if (s_OriginalSBmpAllocLoadImage)
-    {
-        PatchImportEntry(
-            hHostProcess,
-            "Storm.dll",
-            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(s_OriginalSBmpAllocLoadImage)),
-            reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSBmpAllocLoadImage)),
+            reinterpret_cast<FARPROC>(original),
+            hook.hookFn,
             TRUE  // Recursive - patch all loaded modules
         );
     }

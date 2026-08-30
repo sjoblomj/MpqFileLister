@@ -1,18 +1,58 @@
 /*
-    Hooks.cpp - The CMpqFileListerPlugin::Hooked* functions that replace Storm.dll's
-    real SFileOpenFile, SFileOpenFileEx, SVidPlayBegin, SFileLoadFile, SFileLoadFileEx,
-    SBmpLoadImage and SBmpAllocLoadImage in the patched import table. Declared in
-    MpqFileLister.h; installed by InitializePlugin() in MpqFileLister.cpp.
+    Hooks.cpp - Everything specific to the Storm.dll functions this plugin hooks:
+    their ordinals (for Diablo I and later games), the storage for each one's
+    original function pointer, the Hooked* functions that replace them in the
+    patched import table, and GetHookEntries() (see Hooks.h), which is the only
+    thing InitializePlugin() (MpqFileLister.cpp) knows about any of this.
 */
 
+#include "Hooks.h"
 #include "MpqFileLister.h"
 #include "LogFormat.h"
 #include "Utils.h"
 #include <sstream>
 #include <vector>
 
+// Storm.dll ordinals
+static constexpr uint32_t SFILEOPENFILE_D1_ORDINAL       = 0x4E;    // 78
+static constexpr uint32_t SFILEOPENFILEEX_D1_ORDINAL     = 0x4F;    // 79
+static constexpr uint32_t SVIDPLAYBEGIN_D1_ORDINAL       = 0x9D;    // 157
+static constexpr uint32_t SFILEOPENFILE_ORDINAL          = 0x10B;   // 267
+static constexpr uint32_t SFILEOPENFILEEX_ORDINAL        = 0x10C;   // 268
+static constexpr uint32_t SVIDPLAYBEGIN_ORDINAL          = 0x1C6;   // 454
+
+static constexpr uint32_t SFILELOADFILE_D1_ORDINAL       = 0x0;     // not exported by D1's Storm.dll
+static constexpr uint32_t SFILELOADFILEEX_D1_ORDINAL     = 0x0;     // not exported by D1's Storm.dll
+static constexpr uint32_t SBMPLOADIMAGE_D1_ORDINAL       = 0x8;     // 8
+static constexpr uint32_t SBMPALLOCLOADIMAGE_D1_ORDINAL  = 0x0;     // not exported by D1's Storm.dll
+static constexpr uint32_t SFILELOADFILE_ORDINAL          = 0x117;   // 279
+static constexpr uint32_t SFILELOADFILEEX_ORDINAL        = 0x119;   // 281
+static constexpr uint32_t SBMPLOADIMAGE_ORDINAL          = 0x143;   // 323
+static constexpr uint32_t SBMPALLOCLOADIMAGE_ORDINAL     = 0x145;   // 325
+
+/* Storm function signatures */
+typedef BOOL (WINAPI *SFileOpenFilePtr)(LPCSTR lpFileName, HANDLE* hFile);
+typedef BOOL (WINAPI *SFileOpenFileExPtr)(HANDLE hMpq, const char* szFileName, DWORD dwSearchScope, HANDLE* phFile);
+typedef BOOL (WINAPI *SVidPlayBeginPtr)(char *filename, int a2, int* a3, int* a4, int* a5, int flags, HANDLE* video);
+typedef BOOL (WINAPI *SFileLoadFilePtr)(LPCSTR lpFileName, LPVOID* lplpFileData, LPDWORD lpdwFileSize, DWORD dwFlags1, DWORD dwFlags2);
+typedef BOOL (WINAPI *SFileLoadFileExPtr)(HANDLE hMpq, LPCSTR lpFileName, LPVOID* lplpFileData, LPDWORD lpdwFileSize, DWORD dwFlags1, DWORD dwFlags2, LPVOID lpOverlapped);
+typedef BOOL (WINAPI *SBmpLoadImagePtr)(LPCSTR lpFileName, LPPALETTEENTRY lpPalette, LPBYTE lpBits, DWORD dwBitsSize, LPDWORD lpdwWidth, LPDWORD lpdwHeight, LPDWORD lpdwBpp);
+// SBmpAllocLoadImage's alloc-callback parameter is passed through untouched, so
+// it's typed as an opaque pointer here rather than a fully-specified callback signature.
+typedef BOOL (WINAPI *SBmpAllocLoadImagePtr)(LPCSTR lpFileName, LPPALETTEENTRY lpPalette, LPBYTE* lplpBits, LPDWORD lpdwWidth, LPDWORD lpdwHeight, LPDWORD lpdwBpp, LPDWORD lpdwSize, LPVOID lpAllocProc);
+
+// Original function pointers - set by InitializePlugin() through the originalPtrSlot
+// of each GetHookEntries() row, read by the Hooked* functions below.
+static SFileOpenFilePtr s_OriginalSFileOpenFile = nullptr;
+static SFileOpenFileExPtr s_OriginalSFileOpenFileEx = nullptr;
+static SVidPlayBeginPtr s_OriginalSVidPlayBegin = nullptr;
+static SFileLoadFilePtr s_OriginalSFileLoadFile = nullptr;
+static SFileLoadFileExPtr s_OriginalSFileLoadFileEx = nullptr;
+static SBmpLoadImagePtr s_OriginalSBmpLoadImage = nullptr;
+static SBmpAllocLoadImagePtr s_OriginalSBmpAllocLoadImage = nullptr;
+
 // Called instead of the original SFileOpenFile
-BOOL WINAPI CMpqFileListerPlugin::HookedSFileOpenFile(
+static BOOL WINAPI HookedSFileOpenFile(
     LPCSTR lpFileName,
     HANDLE* hFile)
 {
@@ -27,14 +67,14 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSFileOpenFile(
         std::vector<std::string> ptrParts;
         ptrParts.push_back(PointerOnly("lpFileName", lpFileName));
         ptrParts.push_back(PointerWithHandle("hFile", hFile));
-        LogFileAccess(lpFileName, *hFile, "SFileOpenFile", "", JoinParts(ptrParts));
+        CMpqFileListerPlugin::LogFileAccess(lpFileName, *hFile, "SFileOpenFile", "", JoinParts(ptrParts));
     }
 
     return result;
 }
 
 // Called instead of the original SFileOpenFileEx
-BOOL WINAPI CMpqFileListerPlugin::HookedSFileOpenFileEx(
+static BOOL WINAPI HookedSFileOpenFileEx(
     HANDLE hMpq,
     const char* szFileName,
     DWORD dwSearchScope,
@@ -56,14 +96,14 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSFileOpenFileEx(
         ptrParts.push_back(PointerOnly("szFileName", szFileName));
         ptrParts.push_back(PointerWithHandle("phFile", phFile));
 
-        LogFileAccess(szFileName, *phFile, "SFileOpenFileEx", nonPtr.str(), JoinParts(ptrParts));
+        CMpqFileListerPlugin::LogFileAccess(szFileName, *phFile, "SFileOpenFileEx", nonPtr.str(), JoinParts(ptrParts));
     }
 
     return result;
 }
 
 // Called instead of the original SVidPlayBegin
-BOOL WINAPI CMpqFileListerPlugin::HookedSVidPlayBegin(
+static BOOL WINAPI HookedSVidPlayBegin(
     char *filename,
     int a2,
     int* a3,
@@ -96,14 +136,14 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSVidPlayBegin(
         ptrParts.push_back(PointerOnly("a5", a5));
         ptrParts.push_back(PointerWithHandle("video", video));
 
-        LogFileAccess(filename, nullptr, "SVidPlayBegin", nonPtr.str(), JoinParts(ptrParts));
+        CMpqFileListerPlugin::LogFileAccess(filename, nullptr, "SVidPlayBegin", nonPtr.str(), JoinParts(ptrParts));
     }
 
     return result;
 }
 
 // Called instead of the original SFileLoadFile
-BOOL WINAPI CMpqFileListerPlugin::HookedSFileLoadFile(
+static BOOL WINAPI HookedSFileLoadFile(
     LPCSTR lpFileName,
     LPVOID* lplpFileData,
     LPDWORD lpdwFileSize,
@@ -126,14 +166,14 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSFileLoadFile(
         ptrParts.push_back(PointerWithPointer("lplpFileData", reinterpret_cast<void* const*>(lplpFileData)));
         ptrParts.push_back(PointerWithDword("lpdwFileSize", lpdwFileSize));
 
-        LogFileAccess(lpFileName, nullptr, "SFileLoadFile", nonPtr.str(), JoinParts(ptrParts));
+        CMpqFileListerPlugin::LogFileAccess(lpFileName, nullptr, "SFileLoadFile", nonPtr.str(), JoinParts(ptrParts));
     }
 
     return result;
 }
 
 // Called instead of the original SFileLoadFileEx
-BOOL WINAPI CMpqFileListerPlugin::HookedSFileLoadFileEx(
+static BOOL WINAPI HookedSFileLoadFileEx(
     HANDLE hMpq,
     LPCSTR lpFileName,
     LPVOID* lplpFileData,
@@ -160,14 +200,14 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSFileLoadFileEx(
         ptrParts.push_back(PointerWithDword("lpdwFileSize", lpdwFileSize));
         ptrParts.push_back(PointerOnly("lpOverlapped", lpOverlapped));
 
-        LogFileAccess(lpFileName, nullptr, "SFileLoadFileEx", nonPtr.str(), JoinParts(ptrParts));
+        CMpqFileListerPlugin::LogFileAccess(lpFileName, nullptr, "SFileLoadFileEx", nonPtr.str(), JoinParts(ptrParts));
     }
 
     return result;
 }
 
 // Called instead of the original SBmpLoadImage
-BOOL WINAPI CMpqFileListerPlugin::HookedSBmpLoadImage(
+static BOOL WINAPI HookedSBmpLoadImage(
     LPCSTR lpFileName,
     LPPALETTEENTRY lpPalette,
     LPBYTE lpBits,
@@ -194,14 +234,14 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSBmpLoadImage(
         ptrParts.push_back(PointerWithDword("lpdwHeight", lpdwHeight));
         ptrParts.push_back(PointerWithDword("lpdwBpp", lpdwBpp));
 
-        LogFileAccess(lpFileName, nullptr, "SBmpLoadImage", nonPtr, JoinParts(ptrParts));
+        CMpqFileListerPlugin::LogFileAccess(lpFileName, nullptr, "SBmpLoadImage", nonPtr, JoinParts(ptrParts));
     }
 
     return result;
 }
 
 // Called instead of the original SBmpAllocLoadImage
-BOOL WINAPI CMpqFileListerPlugin::HookedSBmpAllocLoadImage(
+static BOOL WINAPI HookedSBmpAllocLoadImage(
     LPCSTR lpFileName,
     LPPALETTEENTRY lpPalette,
     LPBYTE* lplpBits,
@@ -232,8 +272,37 @@ BOOL WINAPI CMpqFileListerPlugin::HookedSBmpAllocLoadImage(
         ptrParts.push_back(PointerWithDword("lpdwSize", lpdwSize));
         ptrParts.push_back(PointerOnly("lpAllocProc", lpAllocProc));
 
-        LogFileAccess(lpFileName, nullptr, "SBmpAllocLoadImage", "", JoinParts(ptrParts));
+        CMpqFileListerPlugin::LogFileAccess(lpFileName, nullptr, "SBmpAllocLoadImage", "", JoinParts(ptrParts));
     }
 
     return result;
+}
+
+const std::vector<HookEntry>& GetHookEntries()
+{
+    // Use reinterpret_cast via void* to avoid -Wcast-function-type warning
+    static const std::vector<HookEntry> hooks = {
+        { "SFileOpenFile", SFILEOPENFILE_D1_ORDINAL, SFILEOPENFILE_ORDINAL,
+          reinterpret_cast<void**>(&s_OriginalSFileOpenFile),
+          reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSFileOpenFile)) },
+        { "SFileOpenFileEx", SFILEOPENFILEEX_D1_ORDINAL, SFILEOPENFILEEX_ORDINAL,
+          reinterpret_cast<void**>(&s_OriginalSFileOpenFileEx),
+          reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSFileOpenFileEx)) },
+        { "SVidPlayBegin", SVIDPLAYBEGIN_D1_ORDINAL, SVIDPLAYBEGIN_ORDINAL,
+          reinterpret_cast<void**>(&s_OriginalSVidPlayBegin),
+          reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSVidPlayBegin)) },
+        { "SFileLoadFile", SFILELOADFILE_D1_ORDINAL, SFILELOADFILE_ORDINAL,
+          reinterpret_cast<void**>(&s_OriginalSFileLoadFile),
+          reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSFileLoadFile)) },
+        { "SFileLoadFileEx", SFILELOADFILEEX_D1_ORDINAL, SFILELOADFILEEX_ORDINAL,
+          reinterpret_cast<void**>(&s_OriginalSFileLoadFileEx),
+          reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSFileLoadFileEx)) },
+        { "SBmpLoadImage", SBMPLOADIMAGE_D1_ORDINAL, SBMPLOADIMAGE_ORDINAL,
+          reinterpret_cast<void**>(&s_OriginalSBmpLoadImage),
+          reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSBmpLoadImage)) },
+        { "SBmpAllocLoadImage", SBMPALLOCLOADIMAGE_D1_ORDINAL, SBMPALLOCLOADIMAGE_ORDINAL,
+          reinterpret_cast<void**>(&s_OriginalSBmpAllocLoadImage),
+          reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSBmpAllocLoadImage)) },
+    };
+    return hooks;
 }

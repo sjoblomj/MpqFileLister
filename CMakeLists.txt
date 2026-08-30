@@ -25,6 +25,7 @@ set(SOURCES
 
 set(HEADERS
     MpqFileLister.h
+    Hooks.h
     LogFormat.h
     Config.h
     ConfigDialog.h

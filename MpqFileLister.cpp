@@ -15,23 +15,6 @@
 #include <unordered_set>
 #include <vector>
 
-// SFileGetFileArchive/SFileGetArchiveName aren't hooked (nothing gets patched) -
-// they're only resolved so LogFileAccess() can look up which archive a file came
-// from, so they stay here rather than in Hooks.h/cpp alongside the actual hooks.
-static constexpr uint32_t SFILEGETFILEARCHIVE_D1_ORDINAL = 0x4B;    // 75
-static constexpr uint32_t SFILEGETARCHIVENAME_D1_ORDINAL = 0x0;     // not exported by D1's Storm.dll
-static constexpr uint32_t SFILEGETFILEARCHIVE_ORDINAL    = 0x108;   // 264
-static constexpr uint32_t SFILEGETARCHIVENAME_ORDINAL    = 0x113;   // 275
-
-// Function pointer types for archive name lookup
-// BOOL SFileGetFileArchive(HANDLE hFile, HANDLE* phArchive)
-using SFileGetFileArchivePtr = BOOL (WINAPI*)(HANDLE, HANDLE*);
-// BOOL SFileGetArchiveName(HANDLE hArchive, char* szArchiveName, DWORD dwBufferSize)
-using SFileGetArchiveNamePtr = BOOL (WINAPI*)(HANDLE, char*, DWORD);
-
-static SFileGetFileArchivePtr s_SFileGetFileArchive = nullptr;
-static SFileGetArchiveNamePtr s_SFileGetArchiveName = nullptr;
-
 // Global plugin instance
 CMpqFileListerPlugin g_MpqFileLister;
 
@@ -172,27 +155,13 @@ void CMpqFileListerPlugin::LogFileAccess(const char* fileName, HANDLE fileHandle
 
     std::lock_guard<std::mutex> lock(s_logMutex);
 
-    // Look up the archive name, if the format asks for it and it can be resolved.
-    // Not every call yields an HSFILE (e.g. SVidPlayBegin, SFileLoadFile), and
-    // SFileGetArchiveName is not exported by Diablo I's Storm.dll at all - in
-    // both cases %a simply expands to an empty string.
+    // Look up the archive name, if the format asks for it. LookupArchiveName()
+    // returns "" when it can't be resolved - not every call yields an HSFILE (e.g.
+    // SVidPlayBegin, SFileLoadFile), and SFileGetArchiveName is not exported by
+    // Diablo I's Storm.dll at all - in both cases %a simply expands to an empty string.
     std::string archiveName;
-    bool needArchive = g_logFormat.find("%a") != std::string::npos;
-
-    if (needArchive && fileHandle && s_SFileGetFileArchive && s_SFileGetArchiveName)
-    {
-        HANDLE hArchive = nullptr;
-        if (s_SFileGetFileArchive(fileHandle, &hArchive) && hArchive)
-        {
-            char archiveNameBuf[MAX_PATH] = {0};
-            if (s_SFileGetArchiveName(hArchive, archiveNameBuf, MAX_PATH) && archiveNameBuf[0])
-            {
-                // Extract just the filename from the full path
-                std::filesystem::path archivePath(archiveNameBuf);
-                archiveName = archivePath.filename().string();
-            }
-        }
-    }
+    if (g_logFormat.find("%a") != std::string::npos)
+        archiveName = LookupArchiveName(fileHandle);
 
     // Build the uniqueness key for duplicate detection. This mirrors what the log
     // format actually distinguishes: the key always excludes the timestamp (so
@@ -314,19 +283,9 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
         return TRUE;  // Return TRUE to not abort the patch
     }
 
-    // Get SFileGetFileArchive and SFileGetArchiveName for logging which MPQ files come from
-    // (optional - e.g. SFileGetArchiveName does not exist on Diablo I's Storm.dll, ordinal 0)
-    bool isD1 = (g_targetGame == TargetGame::DIABLO_1);
-    uint32_t sFileGetFileArchiveOrdinal = isD1 ? SFILEGETFILEARCHIVE_D1_ORDINAL : SFILEGETFILEARCHIVE_ORDINAL;
-    uint32_t sFileGetArchiveNameOrdinal = isD1 ? SFILEGETARCHIVENAME_D1_ORDINAL : SFILEGETARCHIVENAME_ORDINAL;
-
-    s_SFileGetFileArchive = reinterpret_cast<SFileGetFileArchivePtr>(
-        reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)sFileGetFileArchiveOrdinal)));
-    if (sFileGetArchiveNameOrdinal)
-    {
-        s_SFileGetArchiveName = reinterpret_cast<SFileGetArchiveNamePtr>(
-            reinterpret_cast<void*>(GetProcAddress(m_hStorm, (LPCSTR)sFileGetArchiveNameOrdinal)));
-    }
+    // Resolve the (non-hooked) archive-name lookup so LogFileAccess can look up
+    // which MPQ archive a file came from - see Hooks.h for why this isn't a hook.
+    ResolveArchiveNameLookup(m_hStorm, g_targetGame == TargetGame::DIABLO_1);
 
     // Patch the import table to redirect calls to our hooks
     HMODULE hHostProcess = GetModuleHandle(nullptr);

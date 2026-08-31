@@ -210,11 +210,13 @@ The output is `MpqFileLister.qdp` (a DLL with the MPQDraft plugin extension). Lo
 
 ## Files
 
-| File                 | Description                     |
-|----------------------|---------------------------------|
-| `MpqFileLister.cpp`  | Main plugin implementation      |
-| `MpqFileLister.h`    | Plugin class declaration        |
-| `Config.cpp/h`       | Configuration loading/saving    |
-| `ConfigDialog.cpp/h` | Win32 configuration dialog      |
-| `QHookAPI.cpp/h`     | Import table patching utilities |
-| `MPQDraftPlugin.h`   | MPQDraft plugin interface       |
+| File                 | Description                                                        |
+|----------------------|---------------------------------------------------------------------|
+| `MpqFileLister.cpp/h`| DLL entry point, `IMPQDraftPlugin` glue, and plugin lifecycle (`InitializePlugin`/`TerminatePlugin`). Knows nothing about which Storm.dll functions exist - see `Hooks.cpp/h` |
+| `Hooks.cpp/h`        | Everything Storm.dll-specific: hook ordinals (Diablo I and later games), the `Hooked*` functions installed in the patched import table, and the archive-name lookup |
+| `LogFormat.cpp/h`    | The log-line templating engine - expands `%t`/`%a`/`%f`/`%c`/`%p`/`%P`/etc. into a logged line |
+| `Config.cpp/h`       | Configuration loading/saving                                        |
+| `ConfigDialog.cpp/h` | Win32 configuration dialog                                          |
+| `Utils.cpp/h`        | Small, generic, reusable helpers (safe module-path lookup, string joining) |
+| `QHookAPI.cpp/h`     | Import table patching utilities                                     |
+| `MPQDraftPlugin.h`   | MPQDraft plugin interface                                           |

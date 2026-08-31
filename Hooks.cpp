@@ -1,24 +1,30 @@
 /*
-    Hooks.cpp - Everything specific to the Storm.dll functions this plugin hooks:
+    Hooks.cpp - Everything specific to the Storm.dll functions this plugin touches:
     their ordinals (for Diablo I and later games), the storage for each one's
-    original function pointer, the Hooked* functions that replace them in the
-    patched import table, and GetHookEntries() (see Hooks.h), which is the only
-    thing InitializePlugin() (MpqFileLister.cpp) knows about any of this.
+    original function pointer, the Hooked* functions that replace the actual hooks
+    in the patched import table, the (non-hooked) archive-name lookup, and the
+    small set of functions declared in Hooks.h, which is the only thing
+    MpqFileLister.cpp knows about any of this.
 */
 
 #include "Hooks.h"
 #include "MpqFileLister.h"
 #include "LogFormat.h"
 #include "Utils.h"
+#include <filesystem>
 #include <sstream>
 #include <vector>
 
 // Storm.dll ordinals
 static constexpr uint32_t SFILEOPENFILE_D1_ORDINAL       = 0x4E;    // 78
 static constexpr uint32_t SFILEOPENFILEEX_D1_ORDINAL     = 0x4F;    // 79
+static constexpr uint32_t SFILEGETFILEARCHIVE_D1_ORDINAL = 0x4B;    // 75
+static constexpr uint32_t SFILEGETARCHIVENAME_D1_ORDINAL = 0x0;     // not exported by D1's Storm.dll
 static constexpr uint32_t SVIDPLAYBEGIN_D1_ORDINAL       = 0x9D;    // 157
 static constexpr uint32_t SFILEOPENFILE_ORDINAL          = 0x10B;   // 267
 static constexpr uint32_t SFILEOPENFILEEX_ORDINAL        = 0x10C;   // 268
+static constexpr uint32_t SFILEGETFILEARCHIVE_ORDINAL    = 0x108;   // 264
+static constexpr uint32_t SFILEGETARCHIVENAME_ORDINAL    = 0x113;   // 275
 static constexpr uint32_t SVIDPLAYBEGIN_ORDINAL          = 0x1C6;   // 454
 
 static constexpr uint32_t SFILELOADFILE_D1_ORDINAL       = 0x0;     // not exported by D1's Storm.dll
@@ -41,6 +47,13 @@ typedef BOOL (WINAPI *SBmpLoadImagePtr)(LPCSTR lpFileName, LPPALETTEENTRY lpPale
 // it's typed as an opaque pointer here rather than a fully-specified callback signature.
 typedef BOOL (WINAPI *SBmpAllocLoadImagePtr)(LPCSTR lpFileName, LPPALETTEENTRY lpPalette, LPBYTE* lplpBits, LPDWORD lpdwWidth, LPDWORD lpdwHeight, LPDWORD lpdwBpp, LPDWORD lpdwSize, LPVOID lpAllocProc);
 
+// SFileGetFileArchive/SFileGetArchiveName aren't hooked - just resolved so
+// LookupArchiveName() can use them.
+// BOOL SFileGetFileArchive(HANDLE hFile, HANDLE* phArchive)
+using SFileGetFileArchivePtr = BOOL (WINAPI*)(HANDLE, HANDLE*);
+// BOOL SFileGetArchiveName(HANDLE hArchive, char* szArchiveName, DWORD dwBufferSize)
+using SFileGetArchiveNamePtr = BOOL (WINAPI*)(HANDLE, char*, DWORD);
+
 // Original function pointers - set by InitializePlugin() through the originalPtrSlot
 // of each GetHookEntries() row, read by the Hooked* functions below.
 static SFileOpenFilePtr s_OriginalSFileOpenFile = nullptr;
@@ -50,6 +63,10 @@ static SFileLoadFilePtr s_OriginalSFileLoadFile = nullptr;
 static SFileLoadFileExPtr s_OriginalSFileLoadFileEx = nullptr;
 static SBmpLoadImagePtr s_OriginalSBmpLoadImage = nullptr;
 static SBmpAllocLoadImagePtr s_OriginalSBmpAllocLoadImage = nullptr;
+
+// Set by ResolveArchiveNameLookup(), read by LookupArchiveName().
+static SFileGetFileArchivePtr s_SFileGetFileArchive = nullptr;
+static SFileGetArchiveNamePtr s_SFileGetArchiveName = nullptr;
 
 // Called instead of the original SFileOpenFile
 static BOOL WINAPI HookedSFileOpenFile(
@@ -305,4 +322,38 @@ const std::vector<HookEntry>& GetHookEntries()
           reinterpret_cast<FARPROC>(reinterpret_cast<void*>(HookedSBmpAllocLoadImage)) },
     };
     return hooks;
+}
+
+void ResolveArchiveNameLookup(HMODULE hStorm, bool isDiabloOne)
+{
+    uint32_t sFileGetFileArchiveOrdinal = isDiabloOne ? SFILEGETFILEARCHIVE_D1_ORDINAL : SFILEGETFILEARCHIVE_ORDINAL;
+    uint32_t sFileGetArchiveNameOrdinal = isDiabloOne ? SFILEGETARCHIVENAME_D1_ORDINAL : SFILEGETARCHIVENAME_ORDINAL;
+
+    s_SFileGetFileArchive = reinterpret_cast<SFileGetFileArchivePtr>(
+        reinterpret_cast<void*>(GetProcAddress(hStorm, (LPCSTR)sFileGetFileArchiveOrdinal)));
+
+    // An ordinal of 0 means SFileGetArchiveName isn't exported by this target's
+    // Storm.dll (e.g. Diablo I) - leave it unresolved rather than look it up.
+    if (sFileGetArchiveNameOrdinal)
+    {
+        s_SFileGetArchiveName = reinterpret_cast<SFileGetArchiveNamePtr>(
+            reinterpret_cast<void*>(GetProcAddress(hStorm, (LPCSTR)sFileGetArchiveNameOrdinal)));
+    }
+}
+
+std::string LookupArchiveName(HANDLE fileHandle)
+{
+    if (!fileHandle || !s_SFileGetFileArchive || !s_SFileGetArchiveName)
+        return "";
+
+    HANDLE hArchive = nullptr;
+    if (!s_SFileGetFileArchive(fileHandle, &hArchive) || !hArchive)
+        return "";
+
+    char archiveNameBuf[MAX_PATH] = {0};
+    if (!s_SFileGetArchiveName(hArchive, archiveNameBuf, MAX_PATH) || !archiveNameBuf[0])
+        return "";
+
+    // Extract just the filename from the full path
+    return std::filesystem::path(archiveNameBuf).filename().string();
 }

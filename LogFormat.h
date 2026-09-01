@@ -6,7 +6,6 @@
 #ifndef LOGFORMAT_H
 #define LOGFORMAT_H
 
-#include <windows.h>
 #include <string>
 
 // Formats a raw pointer value for the log, e.g. "0x28fe1c", or "(null)".
@@ -21,11 +20,17 @@ std::string PointerOnly(const char* name, const void* ptr);
 
 // For a pointer-to-DWORD output parameter that a successful call is known to populate
 // (e.g. SBmpLoadImage's lpdwWidth): report both the address and the value it points to.
-std::string PointerWithDword(const char* name, const DWORD* ptr);
+// Takes `unsigned long*` rather than Windows' `DWORD*` so this header doesn't need
+// <windows.h> - the two are the exact same type (DWORD is a typedef for unsigned
+// long), so callers can pass a real DWORD* here with no cast.
+std::string PointerWithDword(const char* name, const unsigned long* ptr);
 
 // For a pointer-to-HANDLE output parameter (the common Storm "give me a handle back"
 // idiom, e.g. SFileOpenFile's hFile): report both the address and the resulting handle.
-std::string PointerWithHandle(const char* name, HANDLE* ptr);
+// Takes `void**` rather than Windows' `HANDLE*` so this header doesn't need
+// <windows.h> - the two are the exact same type (HANDLE is a typedef for void*), so
+// callers can pass a real HANDLE* here with no cast.
+std::string PointerWithHandle(const char* name, void** ptr);
 
 // For a pointer-to-pointer output buffer (e.g. SFileLoadFile's lplpFileData): report the
 // address plus the resulting buffer's address - one level of dereference to reveal where

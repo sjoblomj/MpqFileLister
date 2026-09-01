@@ -24,7 +24,7 @@ std::string PointerOnly(const char* name, const void* ptr)
     return std::string(name) + "=" + PointerToString(ptr);
 }
 
-std::string PointerWithDword(const char* name, const DWORD* ptr)
+std::string PointerWithDword(const char* name, const unsigned long* ptr)
 {
     std::string s = PointerOnly(name, ptr);
     if (ptr)
@@ -32,7 +32,7 @@ std::string PointerWithDword(const char* name, const DWORD* ptr)
     return s;
 }
 
-std::string PointerWithHandle(const char* name, HANDLE* ptr)
+std::string PointerWithHandle(const char* name, void** ptr)
 {
     std::string s = PointerOnly(name, ptr);
     if (ptr && *ptr)

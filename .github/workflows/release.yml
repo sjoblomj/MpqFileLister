@@ -1,0 +1,48 @@
+name: Build and release MpqFileLister
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Configure with CMake
+        run: cmake -B build -S . -A Win32
+
+      - name: Build (Release)
+        run: cmake --build build --config Release
+
+      - name: Determine version
+        id: version
+        shell: pwsh
+        run: |
+          $match = Select-String -Path CMakeLists.txt -Pattern 'project\(MpqFileLister\s+VERSION\s+([\d.]+)'
+          $version = $match.Matches[0].Groups[1].Value
+          if (-not $version) {
+            throw "Could not determine version from CMakeLists.txt"
+          }
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "number=$version"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "tag=v$version"
+
+      - name: Rename plugin artifact
+        shell: pwsh
+        run: |
+          Copy-Item -Path "build\Release\MpqFileLister.qdp" -Destination "MpqFileLister-${{ steps.version.outputs.tag }}.qdp"
+
+      - name: Create/update release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: MpqFileLister ${{ steps.version.outputs.tag }}
+          body: See CHANGELOG.md for details.
+          files: MpqFileLister-${{ steps.version.outputs.tag }}.qdp

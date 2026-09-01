@@ -1,14 +1,14 @@
 /*
-    Hooks.h - The generic interface InitializePlugin()/LogFileAccess()
+    StormHooks.h - The generic interface InitializePlugin()/LogFileAccess()
     (MpqFileLister.cpp) use to resolve and patch every Storm.dll function this
     plugin touches, without needing to know what any of them are. All of that
     knowledge - which functions exist, their ordinals per target game, and (for
     the ones that are actually hooked) their replacement functions - lives
-    entirely in Hooks.cpp.
+    entirely in StormHooks.cpp.
 */
 
-#ifndef HOOKS_H
-#define HOOKS_H
+#ifndef STORMHOOKS_H
+#define STORMHOOKS_H
 
 #include <windows.h>
 #include <cstdint>
@@ -48,4 +48,4 @@ void ResolveArchiveNameLookup(HMODULE hStorm, bool isDiabloOne);
 // hooked call yields a real HSFILE), or the lookup itself failed for this handle.
 std::string LookupArchiveName(HANDLE fileHandle);
 
-#endif // HOOKS_H
+#endif // STORMHOOKS_H

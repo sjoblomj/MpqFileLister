@@ -72,7 +72,7 @@ public:
 static CMpqFileListerPluginInterface g_PluginInterface;
 
 // Required export - this is how MPQDraft discovers the plugin
-extern "C" __declspec(dllexport) BOOL WINAPI GetMPQDraftPlugin(IMPQDraftPlugin** lppMPQDraftPlugin)
+extern "C" BOOL WINAPI GetMPQDraftPlugin(IMPQDraftPlugin** lppMPQDraftPlugin)
 {
     if (!lppMPQDraftPlugin)
         return FALSE;

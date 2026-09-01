@@ -1,13 +1,13 @@
 /*
-    Hooks.cpp - Everything specific to the Storm.dll functions this plugin touches:
-    their ordinals (for Diablo I and later games), the storage for each one's
-    original function pointer, the Hooked* functions that replace the actual hooks
-    in the patched import table, the (non-hooked) archive-name lookup, and the
-    small set of functions declared in Hooks.h, which is the only thing
+    StormHooks.cpp - Everything specific to the Storm.dll functions this plugin
+    touches: their ordinals (for Diablo I and later games), the storage for each
+    one's original function pointer, the Hooked* functions that replace the actual
+    hooks in the patched import table, the (non-hooked) archive-name lookup, and
+    the small set of functions declared in StormHooks.h, which is the only thing
     MpqFileLister.cpp knows about any of this.
 */
 
-#include "Hooks.h"
+#include "StormHooks.h"
 #include "MpqFileLister.h"
 #include "LogFormat.h"
 #include "Utils.h"

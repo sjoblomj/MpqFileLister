@@ -212,8 +212,8 @@ The output is `MpqFileLister.qdp` (a DLL with the MPQDraft plugin extension). Lo
 
 | File                 | Description                                                        |
 |----------------------|---------------------------------------------------------------------|
-| `MpqFileLister.cpp/h`| DLL entry point, `IMPQDraftPlugin` glue, and plugin lifecycle (`InitializePlugin`/`TerminatePlugin`). Knows nothing about which Storm.dll functions exist - see `Hooks.cpp/h` |
-| `Hooks.cpp/h`        | Everything Storm.dll-specific: hook ordinals (Diablo I and later games), the `Hooked*` functions installed in the patched import table, and the archive-name lookup |
+| `MpqFileLister.cpp/h`| DLL entry point, `IMPQDraftPlugin` glue, and plugin lifecycle (`InitializePlugin`/`TerminatePlugin`). Knows nothing about which Storm.dll functions exist - see `StormHooks.cpp/h` |
+| `StormHooks.cpp/h`   | Everything Storm.dll-specific: hook ordinals (Diablo I and later games), the `Hooked*` functions installed in the patched import table, and the archive-name lookup |
 | `LogFormat.cpp/h`    | The log-line templating engine - expands `%t`/`%a`/`%f`/`%c`/`%p`/`%P`/etc. into a logged line |
 | `Config.cpp/h`       | Configuration loading/saving                                        |
 | `ConfigDialog.cpp/h` | Win32 configuration dialog                                          |

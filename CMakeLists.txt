@@ -15,7 +15,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Source files
 set(SOURCES
     MpqFileLister.cpp
-    Hooks.cpp
+    StormHooks.cpp
     LogFormat.cpp
     Config.cpp
     ConfigDialog.cpp
@@ -25,7 +25,7 @@ set(SOURCES
 
 set(HEADERS
     MpqFileLister.h
-    Hooks.h
+    StormHooks.h
     LogFormat.h
     Config.h
     ConfigDialog.h

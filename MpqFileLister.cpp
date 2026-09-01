@@ -9,7 +9,7 @@
 #include "ConfigDialog.h"
 #include "Utils.h"
 #include "LogFormat.h"
-#include "Hooks.h"
+#include "StormHooks.h"
 #include <filesystem>
 #include <cstring>
 #include <unordered_set>
@@ -247,7 +247,7 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
     }
 
     // All knowledge of which Storm.dll functions get hooked - their names, ordinals
-    // and replacement functions - lives in Hooks.cpp; this function only knows how
+    // and replacement functions - lives in StormHooks.cpp; this function only knows how
     // to resolve and patch whatever entries it's handed.
     const std::vector<HookEntry>& hooks = GetHookEntries();
 
@@ -284,7 +284,7 @@ BOOL WINAPI CMpqFileListerPlugin::InitializePlugin(IMPQDraftServer* lpMPQDraftSe
     }
 
     // Resolve the (non-hooked) archive-name lookup so LogFileAccess can look up
-    // which MPQ archive a file came from - see Hooks.h for why this isn't a hook.
+    // which MPQ archive a file came from - see StormHooks.h for why this isn't a hook.
     ResolveArchiveNameLookup(m_hStorm, g_targetGame == TargetGame::DIABLO_1);
 
     // Patch the import table to redirect calls to our hooks

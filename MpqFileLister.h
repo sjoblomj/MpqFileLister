@@ -40,8 +40,8 @@ public:
 
     void SetThisModule(HMODULE hModule) { m_hThisModule = hModule; }
 
-    // Logs one file access. Called by the Hooked* functions in Hooks.cpp - this
-    // class knows nothing about which Storm.dll functions exist; see Hooks.h.
+    // Logs one file access. Called by the Hooked* functions in StormHooks.cpp - this
+    // class knows nothing about which Storm.dll functions exist; see StormHooks.h.
     // callName is the Storm.dll function that was called (e.g. "SFileOpenFileEx");
     // nonPointerParams and pointerParams are pre-formatted, human-readable summaries
     // of that call's other arguments - the former for parameters that aren't pointers

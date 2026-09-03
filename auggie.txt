@@ -1,0 +1,371 @@
+› Many game assets are loaded through Storm.dll's `SFileOpenFile` or `SFileOpenFileEx`. But how do menus load their assets? A menu can
+reference a PCX file with backgrounds, for example. How is that PCX file loaded?
+
+● Codebase search - context engine
+  ⎿ How are menu assets (like PCX background files) loaded? Looking for menu loading code, PCX file loading, and how it relates to Storm.dll's
+    SFileOpenFile/SFileOpenFileEx functions.
+  ⎿ Found 10 files
+
+● Codebase search - context engine
+  ⎿Show me the definition of LOAD_BMP_PAL macro, the dlg_load function signature and how it uses pFnLoadBmp parameter, and any callback typedefs
+    like TDlgLoadBmpProc or similar used for loading bitmaps in dialogs.
+  ⎿ Found 8 files
+
+● Storm/Storm.cpp - lines 1-100
+  ⎿ Read 100 lines
+
+● Storm/Storm.cpp - lines 100-150
+  ⎿ Read 51 lines
+
+● lang/gamedata.cpp - lines 1-40
+  ⎿ Read 40 lines
+
+● lang/gamedata.cpp - read filesearch: AllocCB
+  ⎿ Read 26 lines
+
+● Now I have the full picture. Here's how PCX (and other bitmap) assets for menus get loaded:
+
+  Two file-loading paths in Storm
+
+  Storm.dll actually exposes two distinct APIs:
+
+    1. Generic file I/O: SFileOpenFile/SFileOpenFileEx + SFileReadFile — used for raw data (scripts, tables, .bin dialog templates,
+       sounds, etc.). Callers open a handle and read bytes themselves.
+    2. Bitmap-specific API: SBmpLoadImage, SBmpAllocLoadImage, SBmpDecodeImage — a higher-level API dedicated to images. These take just
+        a filename (or in-memory buffer) and internally do the file lookup/read and decode the pixel format (PCX, BMP, etc.) in one
+       call, filling in a palette and pixel buffer directly.
+
+  PCX menu assets go through path 2, not raw SFileOpenFile.
+
+  The chain for a menu background PCX
+
+  lang/gamedata.cpp (EXCERPT)
+  void alloc_load_bmp(const char *pszFilename, GPBITMAP pBmp, LPPALETTEENTRY pPal, ...) {
+    LPBYTE pResult;
+    int width, height;
+    if (!SBmpAllocLoadImage(pszFilename, pPal, &pResult, &width, &height, NULL, NULL, AllocCB)) {
+      FileErrorDlg(pszFilename, SErrGetLastError());
+    }
+    ...
+  }
+
+  alloc_load_bmp is wrapped by the LOAD_BMP_PAL/LOAD_BMP macros and used two ways:
+
+    • Directly for backgrounds, e.g. in glues.cpp:
+  lang/glues.cpp (EXCERPT)
+  SStrPack(szBuff, "\\BackGnd.pcx", MAX_PATH);
+  LOAD_BMP_PAL(szBuff, &pDlg->srcBits, sgGamePalette);
+
+    • Via the dialog system, as the LOAD_BMP_FN callback passed into dlg_load. When a dialog control of type cIMAGE references a
+      filename, dlg_load_ctrl invokes that callback automatically:
+  lang/DLG/dlg.cpp (EXCERPT)
+  if (pDlg->wCtrlType == cIMAGE) {
+    if (pDlg->pszText) {
+      pfFileLoadBmp(pDlg->pszText, &pDlg->srcBits, NULL, logfilename, logline);
+    }
+  }
+
+  SBmpAllocLoadImage/SBmpLoadImage live inside the real (Blizzard-authored) Storm.dll — the Storm/Storm.cpp in this repo only contains
+  empty stub exports used to link a placeholder Storm.lib, since Storm itself isn't being reimplemented. Internally those Storm
+  functions still use Storm's own MPQ-aware file layer (the same one backing SFileOpenFile) to locate/open the file, then decode the PCX
+   data — SBmpDecodeImage is the underlying decode step, also callable directly on an in-memory buffer.
+
+  Special case: embedded resource images
+
+  One outlier is gluError.cpp's err_load_img, used for the fatal-error dialog before the normal MPQ archive is guaranteed available. It
+  pulls the PCX out of the EXE's own Win32 resources instead of the file system, then decodes it manually:
+
+  lang/gluError.cpp (EXCERPT)
+  LPVOID pRsrc = GetResource(pszFilename, MAKEINTRESOURCE(ID_RSRC_IMG), &dwBytes);
+  SBmpDecodeImage(SBMP_IMAGETYPE_PCX, pRsrc, dwBytes, NULL, NULL, 0, ...);
+
+  Summary: menus don't call SFileOpenFile for their PCX art. They call Storm's bitmap API (SBmpLoadImage/SBmpAllocLoadImage, wrapped by
+  alloc_load_bmp/GameLoadImage in gamedata.cpp), which combines file access and PCX decoding into one call. That wrapper is plugged into
+   the dialog loader (dlg_load) as a callback so cIMAGE controls in .bin dialog templates load their referenced PCX automatically, and
+  it's also called directly for full-screen backgrounds like BackGnd.pcx.
+
+›  So assets are loaded through `SFileOpenFile`, `SFileOpenFileEx`, `SBmpLoadImage` and `SBmpAllocLoadImage`. I also know that videos are
+loaded through `SVidPlayBegin`. Are there more calls in addition when things are loaded from MPQs?
+
+● Codebase search - context engine
+  ⎿Inventory all Storm APIs and wrapper functions in this codebase that may load/read assets from MPQs, including files, images, video, groups,
+   themes, fonts, animations, archives, and any direct resource loading. Identify call sites and distinguish loading from playback/rendering.
+  ⎿ Found 10 files
+
+● h/Storm.h - lines 620-760
+  ⎿ Read 141 lines
+
+● h/Storm.h - lines 780-910
+  ⎿ Read 131 lines
+
+● Codebase search - context engine
+  ⎿ Find all uses and definitions of SFileLoadFile, SFileLoadFileEx, SFileOpenArchive, SFileOpenFile, SFileOpenFileEx, SFileReadFile, SBmp*,
+    SVid*, SFileDda*, and wrapper names LOADFILE/MemFileLoad/load_game_data/load_array_data/load_group/font_load. Return relevant call sites.
+  ⎿ Found 13 files
+
+● Yes. Beyond the calls you listed, the MPQ-backed loading interfaces used by this code include the following.
+
+  Direct Storm file-loading APIs
+
+  SFileLoadFile
+
+  Loads an entire file into a buffer allocated by Storm.
+
+  lang/BNetGW.cpp (EXCERPT)
+  DWORD len = 0;
+  SFileLoadFile("rez\\gateways.txt", &location, &len, 0, 0);
+  </augment_code_snippet>
+
+  The returned buffer must be released with:
+
+  SFileUnloadFile(buffer);
+
+  This is useful for small text or binary resources where the caller wants Storm to allocate and load the whole file.
+
+  SFileLoadFileEx
+
+  The archive-specific equivalent. It can load a file from a specified archive and return an allocated buffer.
+
+  <augment_code_snippet path="lang/map_load.cpp" mode="EXCERPT">
+  if (SFileLoadFileEx(NULL, pszFilename, (LPVOID*)&certfile,
+                      &certsize, 0, SFILE_OPENFLAG_CHECKDISK, NULL)) {
+    ...
+    SFileUnloadFile(certfile);
+  }
+  </augment_code_snippet>
+
+  In this example, the NULL archive handle means use Storm's normal archive search order.
+
+  Lower-level file reads
+
+  These are not separate asset formats, but they are another important loading path:
+
+    • SFileOpenFile
+    • SFileOpenFileEx
+    • SFileGetFileSize
+    • SFileReadFile
+    • SFileCloseFile
+
+  The repository wraps them in OpenFile, OpenFileEx, ReadFile_gds, and MemFileLoad.
+
+  <augment_code_snippet path="lang/gamedata.cpp" mode="EXCERPT">
+  if (OpenFileEx(pszFilename, &hFile, ignoreNotFound, NULL, dwSearchScope)) {
+    DWORD dwFilesize = GetFileSize_gds(hFile);
+    pData = SMemAlloc(dwFilesize, file, line);
+    ReadFile_gds(hFile, pData, dwFilesize, NULL);
+    CloseFile(hFile);
+  }
+  </augment_code_snippet>
+
+  This path is used for things such as:
+
+    • .bin dialog templates
+    • .dat tables
+    • .tbl string tables
+    • scripts
+    • group files
+    • overlay files
+    • WAV data
+    • other raw game data
+
+  MemFileLoad is therefore one of the main general-purpose asset loaders, even though it eventually uses SFileOpenFileEx and
+  SFileReadFile.
+
+  Archive management calls
+
+  These do not load an individual asset, but they determine which MPQs are available and searchable:
+
+    • SFileOpenArchive
+    • SFileCloseArchive
+    • SFileGetFileArchive
+    • SFileGetArchiveName
+    • SFileSetLocale
+
+  The game opens Stardat.mpq, patch_rt.mpq, and the relevant CD/expansion archive with priorities. Normal calls such as SFileOpenFile
+  then search those mounted archives according to Storm's search rules.
+
+  <augment_code_snippet path="lang/init.cpp" mode="EXCERPT">
+  sghsMainArchive = open_1_archive(..., "\\Stardat.mpq", MPQ_MAIN_PRIORITY);
+  sghsPatchArchive = open_1_archive(..., "\\patch_rt.mpq", MPQ_PATCH_PRIORITY);
+  </augment_code_snippet>
+
+  There are also explicit archive uses:
+
+    • FileExists(..., archive) → SFileOpenFileEx(archive, ...)
+    • map authentication → SFileOpenArchive
+    • league profile loading → opens a league-specific MPQ before loading profile.pcx
+
+  Other format-specific or specialized loading
+
+  SBmpDecodeImage
+
+  This does not open an MPQ file by filename. It decodes image bytes already in memory.
+
+  It is used for embedded images extracted from the executable's resources, and could also be used after loading arbitrary image data
+  with SFileLoadFile or SFileReadFile.
+
+  SFileDdaBeginEx
+
+  This is the streamed audio path. The caller first opens the sound with SFileOpenFile, then passes the handle to SFileDdaBeginEx.
+
+  <augment_code_snippet path="lang/snd.cpp" mode="EXCERPT">
+  if (!OpenFile(pszFilename, &hFile, TRUE)) return NULL;
+  if (!SFileDdaBeginEx(hFile, 0x40000, 0, 0, volume, 0)) {
+    CloseFile(hFile);
+  }
+  </augment_code_snippet>
+
+  The related calls are:
+
+    • SFileDdaInitialize
+    • SFileDdaBeginEx
+    • SFileDdaGetPos
+    • SFileDdaSetVolume
+    • SFileDdaEnd
+    • SFileDdaDestroy
+
+  These are playback/stream-management calls rather than independent filename-based asset loaders.
+
+  Font loading
+
+  Fonts use a game wrapper, but ultimately go through the generic file loader:
+
+  font_load → LoadFontFile → MemFileLoad → SFileOpenFileEx/SFileReadFile.
+
+  The loaded font data is then decoded/decrypted with DecodeFile.
+
+  Group files
+
+  Image groups and UI themes use the generic file path:
+
+    • ReadGroupFile
+    • LoadGroupFile
+    • load_game_data
+    • dlg_load_theme
+
+  These eventually use SFileOpenFile/SFileReadFile through the repository's wrappers.
+
+  SVidPlayBegin
+
+  As you noted, videos use SVidPlayBegin. The related calls are:
+
+    • SVidInitialize
+    • SVidPlayBegin
+    • SVidPlayContinueSingle
+    • SVidGetSize
+    • SVidPlayEnd
+    • SVidDestroy
+
+  SVidPlayBegin is the video subsystem's filename-based loader/player. It handles locating and opening the .smk internally rather than
+  requiring the caller to explicitly obtain an HSFILE.
+
+  Complete practical list
+
+  For assets stored in MPQs, the relevant loading entry points are:
+
+    • SFileOpenFile
+    • SFileOpenFileEx
+    • SFileReadFile
+    • SFileLoadFile
+    • SFileLoadFileEx
+    • SBmpLoadImage
+    • SBmpAllocLoadImage
+    • SVidPlayBegin
+    • SFileDdaBeginEx after opening a sound file
+    • SBmpDecodeImage for already-loaded image bytes
+
+  And for archive setup/search context:
+
+    • SFileOpenArchive
+    • SFileCloseArchive
+    • SFileGetFileArchive
+    • SFileGetArchiveName
+    • SFileSetLocale
+
+  So the main additional filename-based loader you were missing is `SFileLoadFile`/`SFileLoadFileEx`. Most remaining formats are either
+  wrappers around SFileOpenFileEx + SFileReadFile, or specialized subsystems such as bitmap, video, and audio.
+
+› I am interesed to see the calls where files are fetched from MPQs by their file names. Please list those for me.
+
+› .
+
+● Here is the complete list of Storm APIs that fetch a file by filename from an MPQ (as opposed to operating on an already-open handle or
+   already-in-memory data):
+
+  1. SFileOpenFile
+  Opens a file by name, searching the default set of mounted archives; returns a handle for later SFileReadFile.
+
+  lang/gamedata.cpp (EXCERPT)
+  BOOL OpenFile(const char *pszFilename, HSFILE *phFile, BOOL ignoreNotFound) {
+    if (SFileOpenFile(pszFilename, phFile)) return TRUE;
+    ...
+
+  2. SFileOpenFileEx
+  Same as above, but lets you target a specific archive handle and/or search-scope flags.
+
+  lang/gamedata.cpp (EXCERPT)
+  inline BOOL OpenFileEx(const char *pszFilename, HSFILE *phFile, BOOL ignoreNotFound, HSARCHIVE hMpq, DWORD dwSearchScope) {
+    if (SFileOpenFileEx(hMpq, pszFilename, dwSearchScope, phFile)) return TRUE;
+    ...
+
+  3. SFileLoadFile
+  Loads a whole file by name in one call, letting Storm allocate the buffer.
+
+  lang/BNetGW.cpp (EXCERPT)
+  SFileLoadFile("rez\\gateways.txt", &location, &len, 0, 0);
+
+  4. SFileLoadFileEx
+  Same, but targets a specific archive/search scope.
+
+  lang/map_load.cpp (EXCERPT)
+  SFileLoadFileEx(NULL, pszFilename, (LPVOID*)&certfile, &certsize, 0, SFILE_OPENFLAG_CHECKDISK, NULL)
+
+  5. SBmpLoadImage
+  Fetches an image file by name and decodes it directly into caller-supplied buffers.
+
+  lang/gamedata.cpp (EXCERPT)
+  void GameLoadImage(LPCSTR filename, LPPALETTEENTRY paletteentries, LPBYTE bitmapbits, DWORD buffersize, ...) {
+    if (!SBmpLoadImage(filename, paletteentries, bitmapbits, buffersize, width, height, bitdepth)) {
+
+  6. SBmpAllocLoadImage
+  Same as above, but Storm allocates the pixel buffer via the supplied SBMPALLOCPROC.
+
+  lang/gamedata.cpp (EXCERPT)
+  if (!SBmpAllocLoadImage(pszFilename, pPal, &pResult, &width, &height, NULL, NULL, AllocCB)) {
+
+  7. SVidPlayBegin
+  Fetches and begins streaming a video by filename.
+
+  lang/playflic.cpp (EXCERPT)
+  SVidPlayBegin(sgszFlics[nFlic], NULL, NULL, NULL, NULL, ..., &hVid);
+
+  8. SFileOpenArchive
+  Not a file fetch inside an MPQ, but it opens an MPQ itself by filename (mounting it so the above calls can search it).
+
+  lang/init.cpp (EXCERPT)
+  HSARCHIVE hMpq;
+  if (SFileOpenArchive(pszPath, dwPriority, openmode, &hMpq)) {
+
+
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  Summary table
+
+  | Storm API | Fetches by filename | Returns |
+  |---|---|---|
+  | SFileOpenFile | ✅ | handle |
+  | SFileOpenFileEx | ✅ | handle |
+  | SFileLoadFile | ✅ | allocated buffer |
+  | SFileLoadFileEx | ✅ | allocated buffer |
+  | SBmpLoadImage | ✅ | decoded bitmap into caller buffer |
+  | SBmpAllocLoadImage | ✅ | decoded bitmap into allocated buffer |
+  | SVidPlayBegin | ✅ | video handle/stream |
+  | SFileOpenArchive | ✅ (opens the archive, not a file inside it) | archive handle |
+  | SFileReadFile | ❌ (needs existing handle) | — |
+  | SFileDdaBeginEx | ❌ (needs existing handle) | — |
+  | SBmpDecodeImage | ❌ (operates on in-memory bytes) | — |
+
+  Everything else in the codebase (fonts, groups, .bin dialogs, .dat tables, sounds, etc.) is built on top of
+  SFileOpenFile/SFileOpenFileEx via the wrappers OpenFile, OpenFileEx, and MemFileLoad.
+
+

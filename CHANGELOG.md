@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.2.0] - 2026-08-27
+## [1.2.0] - 2026-09-07
 
 ### Added
 - Can now intercept calls to `SVidPlayBegin`, `SFileLoadFile`, `SFileLoadFileEx`, `SBmpLoadImage` and `SBmpAllocLoadImage`.
